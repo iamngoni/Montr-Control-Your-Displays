@@ -213,6 +213,10 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
     }
 
     private func getDisplayNameFromIOKit(displayId: CGDirectDisplayID) -> String? {
+        // Get the target display's vendor and product IDs
+        let targetVendor = CGDisplayVendorNumber(displayId)
+        let targetModel = CGDisplayModelNumber(displayId)
+
         var iterator: io_iterator_t = 0
         let matching = IOServiceMatching("IODisplayConnect")
 
@@ -229,9 +233,22 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
                 service = IOIteratorNext(iterator)
             }
 
-            if let info = IODisplayCreateInfoDictionary(service, IOOptionBits(kIODisplayOnlyPreferredName))?.takeRetainedValue() as? [String: Any] {
-                if let names = info[kDisplayProductName] as? [String: String],
-                   let name = names.values.first {
+            // Get display info dictionary which contains vendor/product IDs and name
+            guard let infoDict = IODisplayCreateInfoDictionary(service, IOOptionBits(kIODisplayOnlyPreferredName))?.takeRetainedValue() as? [String: Any] else {
+                continue
+            }
+
+            // Check if this is our target display by matching vendor and product IDs
+            guard let vendorId = infoDict[kDisplayVendorID] as? UInt32,
+                  let productId = infoDict[kDisplayProductID] as? UInt32 else {
+                continue
+            }
+
+            // Match by vendor and model
+            if vendorId == targetVendor && productId == targetModel {
+                // Found matching display - get the localized name from EDID
+                if let names = infoDict[kDisplayProductName] as? [String: String],
+                   let name = names.values.first, !name.isEmpty {
                     return name
                 }
             }
