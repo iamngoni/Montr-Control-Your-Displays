@@ -7,8 +7,8 @@ import SwiftUI
 // MARK: - Settings Theme
 
 private enum SettingsTheme {
-    static let background = Color(red: 0.11, green: 0.12, blue: 0.14)
-    static let cardBackground = Color(red: 0.16, green: 0.17, blue: 0.19)
+    static let background = Color(red: 0.043, green: 0.051, blue: 0.067)  // #0b0d11
+    static let cardBackground = Color(red: 0.067, green: 0.075, blue: 0.094)  // #111318
     static let inputBackground = Color(red: 0.20, green: 0.21, blue: 0.23)
     static let teal = Color(red: 0.0, green: 0.78, blue: 0.73)
     static let textPrimary = Color.white
@@ -58,6 +58,11 @@ struct SettingsView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 16)
 
+            // Divider between tab bar and content
+            Rectangle()
+                .fill(SettingsTheme.divider)
+                .frame(height: 1)
+
             // Content
             ScrollView {
                 Group {
@@ -77,6 +82,7 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.horizontal, 20)
+                .padding(.top, 16)
                 .padding(.bottom, 20)
             }
         }
@@ -104,12 +110,6 @@ private struct SettingsTabBar: View {
             }
 
             Spacer()
-
-            // Add/Remove buttons (for profiles)
-            HStack(spacing: 4) {
-                TabBarActionButton(icon: "plus")
-                TabBarActionButton(icon: "minus")
-            }
         }
     }
 }
@@ -123,50 +123,29 @@ private struct SettingsTabButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 4) {
+            VStack(spacing: 6) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(
-                            isSelected
-                                ? SettingsTheme.teal
-                                : (isHovering ? SettingsTheme.cardBackground : Color.clear)
-                        )
-                        .frame(width: 40, height: 32)
+                    if isSelected || isHovering {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(
+                                isSelected
+                                    ? SettingsTheme.teal
+                                    : SettingsTheme.cardBackground
+                            )
+                            .frame(width: 48, height: 40)
+                    }
 
                     Image(systemName: tab.icon)
-                        .font(.system(size: 13))
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundColor(isSelected ? .black : SettingsTheme.textSecondary)
                 }
+                .frame(width: 48, height: 40)
 
                 Text(tab.rawValue)
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundColor(isSelected ? SettingsTheme.teal : SettingsTheme.textSecondary)
             }
-            .frame(width: 65)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            isHovering = hovering
-        }
-    }
-}
-
-private struct TabBarActionButton: View {
-    let icon: String
-    @State private var isHovering = false
-
-    var body: some View {
-        Button {
-            // Action handled by parent
-        } label: {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(SettingsTheme.textSecondary)
-                .frame(width: 24, height: 24)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isHovering ? SettingsTheme.cardBackground : Color.clear)
-                )
+            .frame(width: 70)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -207,78 +186,95 @@ struct GeneralSettingsView: View {
     @State private var sentryEnabled = SettingsManager.shared.sentryEnabled
 
     var body: some View {
-        VStack(spacing: 12) {
-            // Launch at login
-            SettingsRow(
-                icon: "power",
-                iconColor: SettingsTheme.teal,
-            ) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Launch at login")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(SettingsTheme.textPrimary)
-                        Text("Start Montr when you log in")
-                            .font(.system(size: 11))
-                            .foregroundColor(SettingsTheme.textSecondary)
+        VStack(spacing: 14) {
+            // Grouped: Launch at login + Restore display settings
+            VStack(spacing: 0) {
+                // Launch at login
+                SettingsRowContent(
+                    icon: "power",
+                    iconColor: SettingsTheme.teal
+                ) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Launch at login")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(SettingsTheme.textPrimary)
+                            Text("Start Montr when you log in")
+                                .font(.system(size: 11))
+                                .foregroundColor(SettingsTheme.textSecondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $launchAtLogin)
+                            .toggleStyle(TealToggleStyle())
+                            .labelsHidden()
                     }
-                    Spacer()
-                    Toggle("", isOn: $launchAtLogin)
-                        .toggleStyle(TealToggleStyle())
-                        .labelsHidden()
                 }
-            }
-            .onChange(of: launchAtLogin) { _, newValue in
-                SettingsManager.shared.launchAtLogin = newValue
-                setLaunchAtLogin(newValue)
-            }
+                .onChange(of: launchAtLogin) { _, newValue in
+                    SettingsManager.shared.launchAtLogin = newValue
+                    setLaunchAtLogin(newValue)
+                }
 
-            // Restore display settings
-            SettingsRow(
-                icon: "arrow.counterclockwise",
-                iconColor: SettingsTheme.teal
-            ) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Restore display settings on quit")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(SettingsTheme.textPrimary)
-                        Text("Reset brightness when closing app")
-                            .font(.system(size: 11))
-                            .foregroundColor(SettingsTheme.textSecondary)
+                // Divider
+                Rectangle()
+                    .fill(SettingsTheme.divider)
+                    .frame(height: 1)
+
+                // Restore display settings
+                SettingsRowContent(
+                    icon: "arrow.counterclockwise",
+                    iconColor: SettingsTheme.teal
+                ) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Restore display settings on quit")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(SettingsTheme.textPrimary)
+                            Text("Reset brightness when closing app")
+                                .font(.system(size: 11))
+                                .foregroundColor(SettingsTheme.textSecondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $restoreOnQuit)
+                            .toggleStyle(TealToggleStyle())
+                            .labelsHidden()
                     }
-                    Spacer()
-                    Toggle("", isOn: $restoreOnQuit)
-                        .toggleStyle(TealToggleStyle())
-                        .labelsHidden()
+                }
+                .onChange(of: restoreOnQuit) { _, newValue in
+                    SettingsManager.shared.restoreOnQuit = newValue
                 }
             }
-            .onChange(of: restoreOnQuit) { _, newValue in
-                SettingsManager.shared.restoreOnQuit = newValue
-            }
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(SettingsTheme.cardBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(SettingsTheme.divider, lineWidth: 1)
+            )
 
             // Quick Dim card
             SettingsCard(icon: "sparkles", iconColor: SettingsTheme.teal, title: "Quick Dim") {
-                HStack(spacing: 12) {
+                HStack(spacing: 16) {
                     Text("Quick dim level:")
                         .font(.system(size: 12))
                         .foregroundColor(SettingsTheme.textSecondary)
+                        .fixedSize()
 
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             // Track background
                             Capsule()
-                                .fill(SettingsTheme.iconBackground)
-                                .frame(height: 6)
+                                .fill(SettingsTheme.inputBackground)
+                                .frame(height: 8)
 
                             // Filled track
                             Capsule()
                                 .fill(SettingsTheme.teal)
                                 .frame(
-                                    width: max(6, geometry.size.width * (quickDimPercentage / 50)),
-                                    height: 6)
+                                    width: max(8, geometry.size.width * (quickDimPercentage / 50)),
+                                    height: 8)
                         }
-                        .frame(height: 20)
+                        .frame(height: 24)
                         .contentShape(Rectangle())
                         .gesture(
                             DragGesture(minimumDistance: 0)
@@ -289,12 +285,12 @@ struct GeneralSettingsView: View {
                                 }
                         )
                     }
-                    .frame(height: 20)
+                    .frame(height: 24)
 
                     Text("\(Int(quickDimPercentage))%")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(SettingsTheme.textPrimary)
-                        .frame(width: 35, alignment: .trailing)
+                        .frame(width: 40, alignment: .trailing)
                 }
             }
             .onChange(of: quickDimPercentage) { _, newValue in
@@ -304,7 +300,7 @@ struct GeneralSettingsView: View {
             // Privacy card
             SettingsCard(icon: "gearshape.fill", iconColor: SettingsTheme.teal, title: "Privacy") {
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text("Send crash reports (Sentry)")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(SettingsTheme.textPrimary)
@@ -328,8 +324,9 @@ struct GeneralSettingsView: View {
                     sparkleUpdater.checkForUpdates()
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "arrow.down.circle")
+                        Image(systemName: "sparkle")
                             .font(.system(size: 12))
+                            .foregroundColor(SettingsTheme.teal)
                         Text("Check for Updates...")
                             .font(.system(size: 12, weight: .medium))
                     }
@@ -337,8 +334,12 @@ struct GeneralSettingsView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: 20)
                             .fill(SettingsTheme.cardBackground)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20)
+                            .stroke(SettingsTheme.divider, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -437,9 +438,9 @@ struct DisplaysSettingsView: View {
                         )
 
                         if index < displayManager.displays.count - 1 {
-                            Divider()
-                                .background(SettingsTheme.divider)
-                                .padding(.horizontal, 16)
+                            Rectangle()
+                                .fill(SettingsTheme.divider)
+                                .frame(height: 1)
                         }
                     }
                 }
@@ -447,6 +448,10 @@ struct DisplaysSettingsView: View {
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(SettingsTheme.cardBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(SettingsTheme.divider, lineWidth: 1)
             )
 
             // Refresh button
@@ -911,6 +916,10 @@ private struct ProfileDetailPanel: View {
                         RoundedRectangle(cornerRadius: 10)
                             .fill(SettingsTheme.cardBackground)
                     )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(SettingsTheme.divider, lineWidth: 1)
+                    )
                     .onSubmit {
                         profileManager.renameProfile(profile, to: name)
                     }
@@ -943,6 +952,10 @@ private struct ProfileDetailPanel: View {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(SettingsTheme.cardBackground)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(SettingsTheme.divider, lineWidth: 1)
+            )
 
             // Triggers card (shown when auto-activation is enabled)
             if autoActivationEnabled {
@@ -954,8 +967,9 @@ private struct ProfileDetailPanel: View {
                         }
 
                         if trigger.id != profile.triggers.last?.id {
-                            Divider()
-                                .background(SettingsTheme.divider)
+                            Rectangle()
+                                .fill(SettingsTheme.divider)
+                                .frame(height: 1)
                         }
                     }
 
@@ -978,6 +992,10 @@ private struct ProfileDetailPanel: View {
                 .background(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(SettingsTheme.cardBackground)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(SettingsTheme.divider, lineWidth: 1)
                 )
             }
 
@@ -1439,39 +1457,91 @@ private struct SettingsRow<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             // Icon with background
             ZStack {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 10)
                     .fill(SettingsTheme.iconBackground)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 40, height: 40)
 
                 Image(systemName: icon)
-                    .font(.system(size: 13))
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundColor(iconColor)
             }
             .overlay(alignment: .topLeading) {
                 if let badge = badge {
                     Text(badge)
-                        .font(.system(size: 7, weight: .bold))
+                        .font(.system(size: 8, weight: .bold))
                         .foregroundColor(SettingsTheme.textPrimary)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 3)
                         .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(SettingsTheme.iconBackground)
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(SettingsTheme.cardBackground)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .stroke(SettingsTheme.divider, lineWidth: 1)
+                                )
                         )
-                        .offset(x: -8, y: -4)
+                        .offset(x: -12, y: -6)
                 }
             }
 
             content
         }
-        .padding(12)
+        .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(SettingsTheme.cardBackground)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(SettingsTheme.divider, lineWidth: 1)
+        )
+    }
+}
+
+// Row content without background - for use in grouped cards with dividers
+private struct SettingsRowContent<Content: View>: View {
+    let icon: String
+    var iconColor: Color = SettingsTheme.teal
+    var badge: String? = nil
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(spacing: 14) {
+            // Icon with background
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(SettingsTheme.iconBackground)
+                    .frame(width: 40, height: 40)
+
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(iconColor)
+            }
+            .overlay(alignment: .topLeading) {
+                if let badge = badge {
+                    Text(badge)
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(SettingsTheme.textPrimary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(SettingsTheme.cardBackground)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .stroke(SettingsTheme.divider, lineWidth: 1)
+                                )
+                        )
+                        .offset(x: -12, y: -6)
+                }
+            }
+
+            content
+        }
+        .padding(14)
     }
 }
 
@@ -1482,32 +1552,36 @@ private struct SettingsCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             // Header
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 10)
                         .fill(SettingsTheme.iconBackground)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 36, height: 36)
 
                     Image(systemName: icon)
-                        .font(.system(size: 12))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundColor(iconColor)
                 }
 
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(SettingsTheme.textPrimary)
             }
 
             // Content
             content
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(SettingsTheme.cardBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(SettingsTheme.divider, lineWidth: 1)
         )
     }
 }
