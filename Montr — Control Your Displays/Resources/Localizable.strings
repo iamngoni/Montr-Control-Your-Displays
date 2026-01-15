@@ -1,0 +1,47 @@
+/* English localization */
+
+/* App name */
+"app.name" = "Montr";
+
+/* General */
+"general.settings" = "Settings";
+"general.quit" = "Quit";
+"general.cancel" = "Cancel";
+"general.save" = "Save";
+"general.delete" = "Delete";
+"general.create" = "Create";
+
+/* Displays */
+"displays.title" = "Displays";
+"displays.none" = "No displays detected";
+"displays.builtin" = "Built-in Display";
+"displays.brightness" = "Brightness";
+"displays.contrast" = "Contrast";
+
+/* Night Shift */
+"nightshift.title" = "Night Shift";
+"nightshift.temperature" = "Color Temperature";
+"nightshift.schedule" = "Schedule";
+"nightshift.manual" = "Manual";
+"nightshift.sunset_sunrise" = "Sunset to Sunrise";
+"nightshift.custom" = "Custom Schedule";
+
+/* Profiles */
+"profiles.title" = "Profiles";
+"profiles.new" = "New Profile";
+"profiles.name" = "Profile Name";
+"profiles.apply" = "Apply Profile";
+"profiles.update" = "Update with Current Settings";
+
+/* Quick Dim */
+"quickdim.title" = "Quick Dim";
+"quickdim.level" = "Quick dim level";
+
+/* Settings */
+"settings.general" = "General";
+"settings.shortcuts" = "Shortcuts";
+"settings.advanced" = "Advanced";
+
+/* Permissions */
+"permissions.location" = "Montr uses your location to calculate sunrise and sunset times for automatic Night Shift scheduling.";
+"permissions.accessibility" = "Montr needs accessibility access to use global keyboard shortcuts.";
