@@ -46,15 +46,9 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Title
-            Text(selectedTab.rawValue)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(SettingsTheme.textPrimary)
-                .padding(.top, 12)
-                .padding(.bottom, 10)
-
             // Tab bar
             SettingsTabBar(selectedTab: $selectedTab)
+                .padding(.top, 16)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 16)
 
