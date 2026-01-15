@@ -1,6 +1,6 @@
 import AppKit
-import SwiftUI
 import Combine
+import SwiftUI
 
 /// Controls the menu bar status item and popover
 @MainActor
@@ -56,7 +56,9 @@ final class MenuBarController: NSObject, ObservableObject {
 
     private func setupEventMonitor() {
         // Close popover when clicking outside
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [
+            .leftMouseDown, .rightMouseDown,
+        ]) { [weak self] event in
             if let popover = self?.popover, popover.isShown {
                 self?.closePopover()
             }
@@ -95,13 +97,25 @@ final class MenuBarController: NSObject, ObservableObject {
     }
 
     private func openSettingsWindow() {
-        // Use the standard macOS settings window mechanism
+        NSApp.activate(ignoringOtherApps: true)
+
+        // Check if settings window is already open
+        if let settingsWindow = NSApp.windows.first(where: {
+            $0.identifier?.rawValue.contains("Settings") == true || $0.title.contains("Settings")
+                || $0.title.contains("Preferences")
+        }) {
+            settingsWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        // Open settings window
+        // Note: The console warning about SettingsLink is informational
+        // and doesn't prevent the settings window from opening
         if #available(macOS 14.0, *) {
             NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         } else {
             NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
         }
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - Actions
@@ -125,7 +139,8 @@ final class MenuBarController: NSObject, ObservableObject {
 
     func showPopover() {
         guard let button = statusItem?.button,
-              let popover = popover else { return }
+            let popover = popover
+        else { return }
 
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 
@@ -147,7 +162,8 @@ final class MenuBarController: NSObject, ObservableObject {
         Task { @MainActor in
             let profileManager = ProfileManager.shared
             for profile in profileManager.profiles {
-                let item = NSMenuItem(title: profile.name, action: #selector(selectProfile(_:)), keyEquivalent: "")
+                let item = NSMenuItem(
+                    title: profile.name, action: #selector(selectProfile(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = profile.id
                 if profileManager.activeProfile?.id == profile.id {
@@ -163,7 +179,8 @@ final class MenuBarController: NSObject, ObservableObject {
         menu.addItem(NSMenuItem.separator())
 
         // Quick Dim
-        let quickDimItem = NSMenuItem(title: "Quick Dim", action: #selector(toggleQuickDim), keyEquivalent: "d")
+        let quickDimItem = NSMenuItem(
+            title: "Quick Dim", action: #selector(toggleQuickDim), keyEquivalent: "d")
         quickDimItem.target = self
         quickDimItem.keyEquivalentModifierMask = [.option, .command]
         if BrightnessController.shared.quickDimEnabled {
@@ -172,7 +189,8 @@ final class MenuBarController: NSObject, ObservableObject {
         menu.addItem(quickDimItem)
 
         // Night Shift
-        let nightShiftItem = NSMenuItem(title: "Night Shift", action: #selector(toggleNightShift), keyEquivalent: "n")
+        let nightShiftItem = NSMenuItem(
+            title: "Night Shift", action: #selector(toggleNightShift), keyEquivalent: "n")
         nightShiftItem.target = self
         nightShiftItem.keyEquivalentModifierMask = [.option, .command]
         if ColorTemperatureController.shared.isEnabled {
@@ -183,14 +201,16 @@ final class MenuBarController: NSObject, ObservableObject {
         menu.addItem(NSMenuItem.separator())
 
         // Settings
-        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(
+            title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
         menu.addItem(NSMenuItem.separator())
 
         // Quit
-        let quitItem = NSMenuItem(title: "Quit Montr", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(
+            title: "Quit Montr", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -269,7 +289,7 @@ final class MenuBarController: NSObject, ObservableObject {
                         button.contentTintColor = .systemOrange
                     }
                 } else {
-                    button.contentTintColor = nil // Use system default
+                    button.contentTintColor = nil  // Use system default
                 }
             }
         }

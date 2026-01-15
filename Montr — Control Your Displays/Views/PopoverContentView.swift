@@ -34,12 +34,20 @@ struct PopoverContentView: View {
             // Content
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 16) {
-                    // Displays
-                    if displayManager.displays.isEmpty {
-                        EmptyDisplayState()
-                    } else {
-                        ForEach(displayManager.displays) { display in
-                            DisplayCard(display: display)
+                    // Displays section
+                    VStack(alignment: .leading, spacing: 8) {
+                        if displayManager.displays.isEmpty {
+                            EmptyDisplayState()
+                        } else {
+                            ForEach(displayManager.displays) { display in
+                                DisplayCard(display: display)
+
+                                // Separator line after display (if not last)
+                                if display.id != displayManager.displays.last?.id {
+                                    Divider()
+                                        .background(MontrTheme.sliderTrack)
+                                }
+                            }
                         }
                     }
 
@@ -91,9 +99,7 @@ struct PopoverContentView: View {
             QuickDimButton()
 
             // Settings button
-            Button {
-                NotificationCenter.default.post(name: .openMontrSettings, object: nil)
-            } label: {
+            SettingsLink {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 14))
                     .foregroundColor(MontrTheme.textSecondary)
@@ -114,7 +120,10 @@ struct PopoverContentView: View {
 
             HStack(spacing: 6) {
                 Circle()
-                    .fill(displayManager.displays.isEmpty ? MontrTheme.textSecondary : MontrTheme.connectedGreen)
+                    .fill(
+                        displayManager.displays.isEmpty
+                            ? MontrTheme.textSecondary : MontrTheme.connectedGreen
+                    )
                     .frame(width: 6, height: 6)
 
                 Text(displayManager.displays.isEmpty ? "No Displays" : "Connected")
@@ -147,7 +156,9 @@ private struct QuickDimButton: View {
                 Text("Quick Dim")
                     .font(.system(size: 12, weight: .medium))
             }
-            .foregroundColor(brightnessController.quickDimEnabled ? .black : MontrTheme.textSecondary)
+            .foregroundColor(
+                brightnessController.quickDimEnabled ? .black : MontrTheme.textSecondary
+            )
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
@@ -155,7 +166,10 @@ private struct QuickDimButton: View {
                     .fill(brightnessController.quickDimEnabled ? MontrTheme.teal : Color.clear)
                     .overlay(
                         Capsule()
-                            .stroke(brightnessController.quickDimEnabled ? Color.clear : MontrTheme.textSecondary.opacity(0.3), lineWidth: 1)
+                            .stroke(
+                                brightnessController.quickDimEnabled
+                                    ? Color.clear : MontrTheme.textSecondary.opacity(0.3),
+                                lineWidth: 1)
                     )
             )
         }
@@ -172,7 +186,7 @@ private struct DisplayCard: View {
     @State private var brightness: Double = 100
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             // Header row
             HStack(spacing: 8) {
                 // Connected indicator
@@ -189,13 +203,17 @@ private struct DisplayCard: View {
 
                 // Badge
                 Text(display.controlMethodBadge)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundColor(MontrTheme.teal)
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(MontrTheme.teal.opacity(0.15))
+                    )
                     .overlay(
                         RoundedRectangle(cornerRadius: 4)
-                            .stroke(MontrTheme.teal, lineWidth: 1)
+                            .stroke(MontrTheme.teal.opacity(0.5), lineWidth: 1)
                     )
             }
 
@@ -222,26 +240,34 @@ private struct DisplayCard: View {
                                     endPoint: .trailing
                                 )
                             )
-                            .frame(width: max(6, geometry.size.width * (brightness / 100)), height: 6)
+                            .frame(
+                                width: max(6, geometry.size.width * (brightness / 100)), height: 6)
 
                         // Thumb
                         Circle()
                             .fill(.white)
                             .frame(width: 14, height: 14)
                             .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
-                            .offset(x: max(0, min(geometry.size.width - 14, (geometry.size.width - 14) * (brightness / 100))))
+                            .offset(
+                                x: max(
+                                    0,
+                                    min(
+                                        geometry.size.width - 14,
+                                        (geometry.size.width - 14) * (brightness / 100))))
                     }
                     .frame(height: 20)
                     .contentShape(Rectangle())
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { gesture in
-                                let newValue = min(max(0, gesture.location.x / geometry.size.width * 100), 100)
+                                let newValue = min(
+                                    max(0, gesture.location.x / geometry.size.width * 100), 100)
                                 brightness = newValue
                             }
                             .onEnded { _ in
                                 Task {
-                                    await brightnessController.setBrightness(for: display, value: Int(brightness))
+                                    await brightnessController.setBrightness(
+                                        for: display, value: Int(brightness))
                                 }
                             }
                     )
@@ -255,15 +281,12 @@ private struct DisplayCard: View {
                     .monospacedDigit()
             }
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(MontrTheme.cardBackground)
-        )
+        .padding(.vertical, 4)
         .onAppear {
             brightness = Double(brightnessController.getBrightness(for: display))
         }
-        .onChange(of: brightnessController.displayBrightness[display.stableIdentifier]) { _, newValue in
+        .onChange(of: brightnessController.displayBrightness[display.stableIdentifier]) {
+            _, newValue in
             if let newValue {
                 brightness = Double(newValue)
             }
@@ -277,11 +300,15 @@ private struct NightShiftSection: View {
     @StateObject private var colorTempController = ColorTemperatureController.shared
     @State private var temperature: Double = 5625
 
+    // Temperature range: 2700K (warmest/candlelight) to 6500K (coolest/daylight)
     private let minTemp: Double = 2700
     private let maxTemp: Double = 6500
 
+    // Normalized value: 0 = warm (left), 1 = cool (right)
+    // But we want warmer on left, candlelight on right, so we invert
+    // Left (0) = 6500K (less warm), Right (1) = 2700K (warmest/candlelight)
     private var normalizedValue: Double {
-        (temperature - minTemp) / (maxTemp - minTemp)
+        1.0 - (temperature - minTemp) / (maxTemp - minTemp)
     }
 
     var body: some View {
@@ -301,30 +328,33 @@ private struct NightShiftSection: View {
                 Spacer()
 
                 // Toggle
-                Toggle("", isOn: Binding(
-                    get: { colorTempController.isEnabled },
-                    set: { newValue in
-                        Task {
-                            if newValue {
-                                await colorTempController.enable()
-                            } else {
-                                await colorTempController.disable()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { colorTempController.isEnabled },
+                        set: { newValue in
+                            Task {
+                                if newValue {
+                                    await colorTempController.enable()
+                                } else {
+                                    await colorTempController.disable()
+                                }
                             }
                         }
-                    }
-                ))
+                    )
+                )
                 .toggleStyle(TealToggleStyle())
                 .labelsHidden()
             }
 
-            // Temperature slider
+            // Temperature slider - gradient from warm teal to warm orange (candlelight)
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
-                    // Gradient track
+                    // Gradient track: teal-ish on left (less warm) to orange on right (warmest)
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [MontrTheme.warmOrange, Color(white: 0.9)],
+                                colors: [MontrTheme.teal, MontrTheme.warmOrange],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -341,7 +371,12 @@ private struct NightShiftSection: View {
                             Circle()
                                 .stroke(Color.white, lineWidth: 2)
                         )
-                        .offset(x: max(0, min(geometry.size.width - 18, (geometry.size.width - 18) * normalizedValue)))
+                        .offset(
+                            x: max(
+                                0,
+                                min(
+                                    geometry.size.width - 18,
+                                    (geometry.size.width - 18) * normalizedValue)))
                 }
                 .frame(height: 24)
                 .contentShape(Rectangle())
@@ -349,8 +384,10 @@ private struct NightShiftSection: View {
                     DragGesture(minimumDistance: 0)
                         .onChanged { gesture in
                             guard colorTempController.isEnabled else { return }
-                            let normalized = min(max(0, gesture.location.x / geometry.size.width), 1)
-                            temperature = minTemp + normalized * (maxTemp - minTemp)
+                            let normalized = min(
+                                max(0, gesture.location.x / geometry.size.width), 1)
+                            // Invert: right = warmer (lower K), left = cooler (higher K)
+                            temperature = maxTemp - normalized * (maxTemp - minTemp)
                         }
                         .onEnded { _ in
                             Task {
@@ -361,7 +398,7 @@ private struct NightShiftSection: View {
             }
             .frame(height: 24)
 
-            // Temperature labels
+            // Temperature labels (matching reference: Warm -> Warmer -> Candlelight)
             HStack {
                 Text("Warm")
                     .font(.system(size: 10))
@@ -523,7 +560,12 @@ private struct ProfilePillButton: View {
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(isActive ? MontrTheme.teal : (isHovering ? MontrTheme.cardBackground : MontrTheme.cardBackground.opacity(0.6)))
+                    .fill(
+                        isActive
+                            ? MontrTheme.teal
+                            : (isHovering
+                                ? MontrTheme.cardBackground
+                                : MontrTheme.cardBackground.opacity(0.6)))
             )
         }
         .buttonStyle(.plain)

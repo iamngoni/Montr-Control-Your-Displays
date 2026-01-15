@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 import IOKit.ps
 
 /// Manages display profiles
@@ -112,6 +112,15 @@ final class ProfileManager: ObservableObject, @unchecked Sendable {
         let brightnessController = BrightnessController.shared
         let colorTempController = ColorTemperatureController.shared
 
+        // If profile has no display settings yet, capture current settings first
+        if profile.displaySettings.isEmpty && !displays.isEmpty {
+            await updateProfile(profile)
+            // After updating, the profile now has settings, so just mark it active
+            activeProfile = profiles.first { $0.id == profile.id }
+            SettingsManager.shared.activeProfileId = profile.id.uuidString
+            return
+        }
+
         for display in displays {
             if let settings = profile.settings(for: display.stableIdentifier) {
                 await brightnessController.setBrightness(for: display, value: settings.brightness)
@@ -120,7 +129,8 @@ final class ProfileManager: ObservableObject, @unchecked Sendable {
                     await brightnessController.setContrast(for: display, value: contrast)
                 }
 
-                await colorTempController.setTemperature(for: display, kelvin: settings.colorTemperature)
+                await colorTempController.setTemperature(
+                    for: display, kelvin: settings.colorTemperature)
 
                 if settings.nightShiftEnabled {
                     await colorTempController.enable()
@@ -196,8 +206,9 @@ final class ProfileManager: ObservableObject, @unchecked Sendable {
 
         // Restore active profile
         if let activeId = SettingsManager.shared.activeProfileId,
-           let uuid = UUID(uuidString: activeId),
-           let profile = profiles.first(where: { $0.id == uuid }) {
+            let uuid = UUID(uuidString: activeId),
+            let profile = profiles.first(where: { $0.id == uuid })
+        {
             activeProfile = profile
         }
     }
@@ -223,13 +234,15 @@ final class ProfileManager: ObservableObject, @unchecked Sendable {
         let loop = CFRunLoopGetCurrent()
         let context = Unmanaged.passUnretained(self).toOpaque()
 
-        if let source = IOPSNotificationCreateRunLoopSource({ context in
-            guard let context = context else { return }
-            let manager = Unmanaged<ProfileManager>.fromOpaque(context).takeUnretainedValue()
-            Task { @MainActor in
-                await manager.checkAutoActivation()
-            }
-        }, context) {
+        if let source = IOPSNotificationCreateRunLoopSource(
+            { context in
+                guard let context = context else { return }
+                let manager = Unmanaged<ProfileManager>.fromOpaque(context).takeUnretainedValue()
+                Task { @MainActor in
+                    await manager.checkAutoActivation()
+                }
+            }, context)
+        {
             CFRunLoopAddSource(loop, source.takeRetainedValue(), .commonModes)
         }
     }
@@ -237,7 +250,8 @@ final class ProfileManager: ObservableObject, @unchecked Sendable {
     private func startAutoActivationTimer() {
         // Check auto-activation every minute for time-based triggers
         autoActivationTimer?.invalidate()
-        autoActivationTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        autoActivationTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) {
+            [weak self] _ in
             Task { @MainActor in
                 await self?.checkAutoActivation()
             }
@@ -271,9 +285,12 @@ final class ProfileManager: ObservableObject, @unchecked Sendable {
         let sources = IOPSCopyPowerSourcesList(snapshot).takeRetainedValue() as [CFTypeRef]
 
         for source in sources {
-            if let description = IOPSGetPowerSourceDescription(snapshot, source)?.takeUnretainedValue() as? [String: Any] {
+            if let description = IOPSGetPowerSourceDescription(snapshot, source)?
+                .takeUnretainedValue() as? [String: Any]
+            {
                 if let type = description[kIOPSTypeKey] as? String,
-                   type == kIOPSInternalBatteryType {
+                    type == kIOPSInternalBatteryType
+                {
                     if let powerSource = description[kIOPSPowerSourceStateKey] as? String {
                         return powerSource == kIOPSBatteryPowerValue
                     }
