@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D642630D2F191B4A00F38A81 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = D64262BF2F1900A000F38A81 /* Sentry */; };
+		D642630E2F191B4A00F38A81 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D64262C02F1900B000F38A81 /* Sparkle */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		D68719EE2F18586C0008E98B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +57,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D642630E2F191B4A00F38A81 /* Sparkle in Frameworks */,
+				D642630D2F191B4A00F38A81 /* Sentry in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -110,11 +117,11 @@
 			fileSystemSynchronizedGroups = (
 				D68719E22F18586A0008E98B /* Montr — Control Your Displays */,
 			);
-		name = "Montr — Control Your Displays";
-		packageProductDependencies = (
-			D64262BF2F1900A000F38A81 /* Sentry */,
-			D64262C02F1900B000F38A81 /* Sparkle */,
-		);
+			name = "Montr — Control Your Displays";
+			packageProductDependencies = (
+				D64262BF2F1900A000F38A81 /* Sentry */,
+				D64262C02F1900B000F38A81 /* Sparkle */,
+			);
 			productName = "Montr — Control Your Displays";
 			productReference = D68719E02F18586A0008E98B /* Montr — Control Your Displays.app */;
 			productType = "com.apple.product-type.application";
@@ -414,6 +421,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = za.co.codecraftsolutions.montr;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -446,6 +454,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = za.co.codecraftsolutions.montr;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -596,7 +605,7 @@
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.8.1;
 			};
-	};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -611,6 +620,6 @@
 			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
-};
+	};
 	rootObject = D68719D82F18586A0008E98B /* Project object */;
 }
