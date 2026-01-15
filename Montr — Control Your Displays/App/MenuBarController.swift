@@ -80,20 +80,6 @@ final class MenuBarController: NSObject, ObservableObject {
                 self?.openSettingsWindow()
             }
             .store(in: &cancellables)
-
-        // Update icon when Night Shift state changes
-        ColorTemperatureController.shared.$isEnabled
-            .sink { [weak self] _ in
-                self?.updateIcon()
-            }
-            .store(in: &cancellables)
-
-        // Update icon when quick dim state changes
-        BrightnessController.shared.$quickDimEnabled
-            .sink { [weak self] _ in
-                self?.updateIcon()
-            }
-            .store(in: &cancellables)
     }
 
     private func openSettingsWindow() {
@@ -256,41 +242,14 @@ final class MenuBarController: NSObject, ObservableObject {
     private func updateIcon() {
         guard let button = statusItem?.button else { return }
 
-        // Determine icon based on current state
-        let iconName: String
-        let useAccentColor: Bool
-
-        if BrightnessController.shared.quickDimEnabled {
-            iconName = "sun.min.fill"
-            useAccentColor = true
-        } else if ColorTemperatureController.shared.isEnabled {
-            iconName = "moon.fill"
-            useAccentColor = true
-        } else {
-            iconName = "sun.max"
-            useAccentColor = false
-        }
-
-        // Create the icon image
-        if let image = NSImage(systemSymbolName: iconName, accessibilityDescription: "Montr") {
+        // Always use a white monitor icon
+        if let image = NSImage(systemSymbolName: "display", accessibilityDescription: "Montr") {
             let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
             if let configuredImage = image.withSymbolConfiguration(config) {
-                // Create a template image for proper menu bar appearance
                 let finalImage = configuredImage.copy() as! NSImage
-                finalImage.isTemplate = !useAccentColor
-
+                finalImage.isTemplate = true  // Template for proper menu bar appearance (white)
                 button.image = finalImage
-
-                // Only tint if showing active state
-                if useAccentColor {
-                    if BrightnessController.shared.quickDimEnabled {
-                        button.contentTintColor = .systemYellow
-                    } else {
-                        button.contentTintColor = .systemOrange
-                    }
-                } else {
-                    button.contentTintColor = nil  // Use system default
-                }
+                button.contentTintColor = nil
             }
         }
     }
