@@ -1162,7 +1162,8 @@ private struct DisplayTabContent: View {
                             }
                             .onEnded { _ in
                                 Task {
-                                    await colorTempController.setTemperature(for: display, kelvin: Int(temperature))
+                                    // Use single-display method since user is on individual display tab
+                                    await colorTempController.setTemperatureForSingleDisplay(display, kelvin: Int(temperature))
                                 }
                             }
                     )

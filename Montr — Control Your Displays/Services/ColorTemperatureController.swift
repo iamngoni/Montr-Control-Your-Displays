@@ -42,7 +42,8 @@ final class ColorTemperatureController: ObservableObject, @unchecked Sendable {
         return perDisplayTemperature[display.stableIdentifier] ?? globalTemperature
     }
 
-    /// Set color temperature for a display
+    /// Set color temperature for a display (respects applyToAllDisplays setting)
+    /// Use setTemperatureForSingleDisplay() to always apply to just one display
     func setTemperature(for display: Display, kelvin: Int) async {
         let clampedKelvin = max(2700, min(6500, kelvin))
         let identifier = display.stableIdentifier
@@ -58,6 +59,18 @@ final class ColorTemperatureController: ObservableObject, @unchecked Sendable {
             perDisplayTemperature[identifier] = clampedKelvin
             await applyTemperature(to: display, kelvin: clampedKelvin)
         }
+
+        saveSettings()
+    }
+
+    /// Set color temperature for a single display only (ignores applyToAllDisplays setting)
+    /// Use this when the user is explicitly controlling a single display
+    func setTemperatureForSingleDisplay(_ display: Display, kelvin: Int) async {
+        let clampedKelvin = max(2700, min(6500, kelvin))
+        let identifier = display.stableIdentifier
+
+        perDisplayTemperature[identifier] = clampedKelvin
+        await applyTemperature(to: display, kelvin: clampedKelvin)
 
         saveSettings()
     }
