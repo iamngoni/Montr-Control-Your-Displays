@@ -1,7 +1,7 @@
+import CoreGraphics
 import Foundation
 import IOKit
 import IOKit.i2c
-import CoreGraphics
 
 // MARK: - IOKit I2C Bindings
 
@@ -18,10 +18,14 @@ private let kDDCDisplayAddress: UInt8 = 0x6E
 
 // IOKit function declarations for I2C
 @_silgen_name("IOFBGetI2CInterfaceCount")
-private func IOFBGetI2CInterfaceCount(_ service: io_service_t, _ count: UnsafeMutablePointer<IOItemCount>) -> kern_return_t
+private func IOFBGetI2CInterfaceCount(
+    _ service: io_service_t, _ count: UnsafeMutablePointer<IOItemCount>
+) -> kern_return_t
 
 @_silgen_name("IOFBCopyI2CInterfaceForBus")
-private func IOFBCopyI2CInterfaceForBus(_ service: io_service_t, _ bus: IOOptionBits, _ interface: UnsafeMutablePointer<io_service_t>) -> kern_return_t
+private func IOFBCopyI2CInterfaceForBus(
+    _ service: io_service_t, _ bus: IOOptionBits, _ interface: UnsafeMutablePointer<io_service_t>
+) -> kern_return_t
 
 /// Service for DDC/CI communication with external monitors
 final class DDCService {
@@ -29,9 +33,9 @@ final class DDCService {
 
     /// Enable verbose DDC debug logging (disabled in release builds by default)
     #if DEBUG
-    static var debugLoggingEnabled = true
+        static var debugLoggingEnabled = true
     #else
-    static var debugLoggingEnabled = false
+        static var debugLoggingEnabled = false
     #endif
 
     /// Log a debug message (only when debugLoggingEnabled is true)
@@ -96,7 +100,8 @@ final class DDCService {
             return cached
         }
 
-        DDCService.debugLog("DDC: ========== Starting DDC support check for display \(displayId) ==========")
+        DDCService.debugLog(
+            "DDC: ========== Starting DDC support check for display \(displayId) ==========")
 
         // Try alternative approach first (IODisplayConnect → recursive IOI2CInterface search)
         // This approach uses simpler I2C transaction types that work on more hardware
@@ -117,11 +122,15 @@ final class DDCService {
         for attempt in 1...maxRetries {
             do {
                 let brightness = try readBrightness(displayId: displayId)
-                DDCService.debugLog("DDC: SUCCESS! Read brightness (\(brightness)) for display \(displayId) on attempt \(attempt)")
+                DDCService.debugLog(
+                    "DDC: SUCCESS! Read brightness (\(brightness)) for display \(displayId) on attempt \(attempt)"
+                )
                 supported = true
                 break
             } catch {
-                DDCService.debugLog("DDC: Attempt \(attempt)/\(maxRetries) failed for display \(displayId): \(error)")
+                DDCService.debugLog(
+                    "DDC: Attempt \(attempt)/\(maxRetries) failed for display \(displayId): \(error)"
+                )
                 if attempt < maxRetries {
                     // Increasing delay between retries - some monitors are slow
                     let delay = 0.2 * Double(attempt)  // 0.2s, 0.4s, 0.6s, 0.8s
@@ -132,7 +141,9 @@ final class DDCService {
         }
 
         ddcSupportCache[displayId] = supported
-        DDCService.debugLog("DDC: ========== DDC support check complete for display \(displayId): \(supported ? "SUPPORTED" : "NOT SUPPORTED") ==========")
+        DDCService.debugLog(
+            "DDC: ========== DDC support check complete for display \(displayId): \(supported ? "SUPPORTED" : "NOT SUPPORTED") =========="
+        )
         return supported
     }
 
@@ -200,7 +211,8 @@ final class DDCService {
 
     /// Check if display supports volume control
     func supportsVolume(displayId: CGDirectDisplayID) -> Bool {
-        DDCService.debugLog("DDC: ========== Checking volume support for display \(displayId) ==========")
+        DDCService.debugLog(
+            "DDC: ========== Checking volume support for display \(displayId) ==========")
 
         // Try multiple times - DDC can be flaky
         let maxRetries = 5  // Increased from 3
@@ -208,10 +220,14 @@ final class DDCService {
         for attempt in 1...maxRetries {
             do {
                 let volume = try readVolume(displayId: displayId)
-                DDCService.debugLog("DDC: SUCCESS! Read volume (\(volume)) for display \(displayId) on attempt \(attempt) - volume SUPPORTED")
+                DDCService.debugLog(
+                    "DDC: SUCCESS! Read volume (\(volume)) for display \(displayId) on attempt \(attempt) - volume SUPPORTED"
+                )
                 return true
             } catch {
-                DDCService.debugLog("DDC: Volume attempt \(attempt)/\(maxRetries) failed for display \(displayId): \(error)")
+                DDCService.debugLog(
+                    "DDC: Volume attempt \(attempt)/\(maxRetries) failed for display \(displayId): \(error)"
+                )
                 if attempt < maxRetries {
                     let delay = 0.2 * Double(attempt)
                     DDCService.debugLog("DDC: Waiting \(delay)s before volume retry...")
@@ -220,7 +236,9 @@ final class DDCService {
             }
         }
 
-        DDCService.debugLog("DDC: ========== Volume NOT supported for display \(displayId) after \(maxRetries) attempts ==========")
+        DDCService.debugLog(
+            "DDC: ========== Volume NOT supported for display \(displayId) after \(maxRetries) attempts =========="
+        )
         return false
     }
 
@@ -238,7 +256,8 @@ final class DDCService {
         }
 
         guard let service = getFramebufferService(for: displayId) else {
-            DDCService.debugLog("DDC: readVCPValue - framebuffer not found for display \(displayId)")
+            DDCService.debugLog(
+                "DDC: readVCPValue - framebuffer not found for display \(displayId)")
             throw DDCError.framebufferNotFound
         }
         defer { IOObjectRelease(service) }
@@ -248,21 +267,30 @@ final class DDCService {
         var reply = [UInt8](repeating: 0, count: 128)
 
         // DDC/CI read command structure
-        request[0] = 0x82 // Read command
-        request[1] = 0x01 // Length
+        request[0] = 0x82  // Read command
+        request[1] = 0x01  // Length
         request[2] = code.rawValue
 
         // Send I2C request
-        guard sendI2CRequest(service: service, request: request, requestLength: 3, reply: &reply, replyLength: 12) else {
-            DDCService.debugLog("DDC: readVCPValue - I2C communication failed for VCP code 0x\(String(format: "%02X", code.rawValue))")
+        guard
+            sendI2CRequest(
+                service: service, request: request, requestLength: 3, reply: &reply, replyLength: 12
+            )
+        else {
+            DDCService.debugLog(
+                "DDC: readVCPValue - I2C communication failed for VCP code 0x\(String(format: "%02X", code.rawValue))"
+            )
             throw DDCError.communicationFailed
         }
 
         // Parse response
         // Expected format: result code, vcp code, type, max_high, max_low, current_high, current_low
-        guard reply[0] == 0x02, // Result code OK
-              reply[2] == code.rawValue else {
-            DDCService.debugLog("DDC: readVCPValue - invalid response for VCP code 0x\(String(format: "%02X", code.rawValue)): reply[0]=0x\(String(format: "%02X", reply[0])), reply[2]=0x\(String(format: "%02X", reply[2]))")
+        guard reply[0] == 0x02,  // Result code OK
+            reply[2] == code.rawValue
+        else {
+            DDCService.debugLog(
+                "DDC: readVCPValue - invalid response for VCP code 0x\(String(format: "%02X", code.rawValue)): reply[0]=0x\(String(format: "%02X", reply[0])), reply[2]=0x\(String(format: "%02X", reply[2]))"
+            )
             throw DDCError.invalidResponse
         }
 
@@ -296,14 +324,14 @@ final class DDCService {
         var request = [UInt8](repeating: 0, count: 128)
 
         // DDC/CI write command structure
-        request[0] = 0x84 // Write command
-        request[1] = 0x03 // Length
+        request[0] = 0x84  // Write command
+        request[1] = 0x03  // Length
         request[2] = code.rawValue
-        request[3] = UInt8((value >> 8) & 0xFF) // High byte
-        request[4] = UInt8(value & 0xFF) // Low byte
+        request[3] = UInt8((value >> 8) & 0xFF)  // High byte
+        request[4] = UInt8(value & 0xFF)  // Low byte
 
         // Add checksum
-        var checksum: UInt8 = 0x6E ^ 0x51 // DDC destination ^ source
+        var checksum: UInt8 = 0x6E ^ 0x51  // DDC destination ^ source
         for i in 0..<5 {
             checksum ^= request[i]
         }
@@ -311,7 +339,10 @@ final class DDCService {
 
         var reply = [UInt8](repeating: 0, count: 128)
 
-        guard sendI2CRequest(service: service, request: request, requestLength: 6, reply: &reply, replyLength: 0) else {
+        guard
+            sendI2CRequest(
+                service: service, request: request, requestLength: 6, reply: &reply, replyLength: 0)
+        else {
             throw DDCError.communicationFailed
         }
     }
@@ -324,11 +355,14 @@ final class DDCService {
         let targetModel = CGDisplayModelNumber(displayId)
         let targetSerial = CGDisplaySerialNumber(displayId)
 
-        DDCService.debugLog("DDC: [Alt] Looking for IODisplayConnect for display \(displayId) (vendor: \(String(format: "0x%04X", targetVendor)), model: \(targetModel), serial: \(targetSerial))")
+        DDCService.debugLog(
+            "DDC: [Alt] Looking for IODisplayConnect for display \(displayId) (vendor: \(String(format: "0x%04X", targetVendor)), model: \(targetModel), serial: \(targetSerial))"
+        )
 
         let matching = IOServiceMatching("IODisplayConnect")
         var iterator: io_iterator_t = 0
-        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS
+        else {
             DDCService.debugLog("DDC: [Alt] Failed to get IODisplayConnect services")
             return nil
         }
@@ -337,13 +371,17 @@ final class DDCService {
         var service = IOIteratorNext(iterator)
         while service != 0 {
             // Get display info from IODisplayCreateInfoDictionary
-            let info = IODisplayCreateInfoDictionary(service, IOOptionBits(kIODisplayOnlyPreferredName)).takeRetainedValue() as NSDictionary
+            let info =
+                IODisplayCreateInfoDictionary(service, IOOptionBits(kIODisplayOnlyPreferredName))
+                .takeRetainedValue() as NSDictionary
 
             let vendorId = (info[kDisplayVendorID] as? UInt32) ?? 0
             let productId = (info[kDisplayProductID] as? UInt32) ?? 0
             let serialNum = (info[kDisplaySerialNumber] as? UInt32) ?? 0
 
-            DDCService.debugLog("DDC: [Alt] Checking IODisplayConnect - vendor: \(String(format: "0x%04X", vendorId)), product: \(productId), serial: \(serialNum)")
+            DDCService.debugLog(
+                "DDC: [Alt] Checking IODisplayConnect - vendor: \(String(format: "0x%04X", vendorId)), product: \(productId), serial: \(serialNum)"
+            )
 
             // Match vendor and model, serial can be 0 on either side
             if vendorId == targetVendor && productId == targetModel {
@@ -374,7 +412,9 @@ final class DDCService {
             }
 
             var parent: io_service_t = 0
-            if IORegistryEntryGetParentEntry(current, kIOServicePlane, &parent) != KERN_SUCCESS || parent == 0 {
+            if IORegistryEntryGetParentEntry(current, kIOServicePlane, &parent) != KERN_SUCCESS
+                || parent == 0
+            {
                 IOObjectRelease(current)
                 DDCService.debugLog("DDC: [Alt] Failed to find IOFramebuffer parent")
                 return nil
@@ -388,12 +428,14 @@ final class DDCService {
     /// Recursively find first IOI2CInterface under a service
     private func findI2CInterface(under service: io_service_t) -> io_service_t? {
         var iterator: io_iterator_t = 0
-        guard IORegistryEntryCreateIterator(
-            service,
-            kIOServicePlane,
-            IOOptionBits(kIORegistryIterateRecursively),
-            &iterator
-        ) == KERN_SUCCESS else {
+        guard
+            IORegistryEntryCreateIterator(
+                service,
+                kIOServicePlane,
+                IOOptionBits(kIORegistryIterateRecursively),
+                &iterator
+            ) == KERN_SUCCESS
+        else {
             DDCService.debugLog("DDC: [Alt] Failed to create recursive iterator")
             return nil
         }
@@ -444,7 +486,8 @@ final class DDCService {
         // Open I2C interface
         var connect: IOI2CConnectRef?
         guard IOI2CInterfaceOpen(i2cInterface, 0, &connect) == KERN_SUCCESS,
-              let i2cConnect = connect else {
+            let i2cConnect = connect
+        else {
             DDCService.debugLog("DDC: [Alt] Failed to open I2C interface")
             return false
         }
@@ -513,17 +556,20 @@ final class DDCService {
             reply[i] = replyBuffer[i]
         }
 
-        let replyStr = reply.prefix(Int(request.replyBytes)).map { String(format: "%02X", $0) }.joined(separator: " ")
+        let replyStr = reply.prefix(Int(request.replyBytes)).map { String(format: "%02X", $0) }
+            .joined(separator: " ")
         DDCService.debugLog("DDC: [Alt] Reply (\(request.replyBytes) bytes): \(replyStr)")
 
         // Check for VCP Feature Reply marker (0x02)
         let supported = reply.contains(0x02)
-        DDCService.debugLog("DDC: [Alt] DDC probe result: \(supported ? "SUPPORTED" : "NOT SUPPORTED")")
+        DDCService.debugLog(
+            "DDC: [Alt] DDC probe result: \(supported ? "SUPPORTED" : "NOT SUPPORTED")")
         return supported
     }
 
     /// Read VCP value using alternative I2C approach
-    private func readVCPAlternative(displayId: CGDirectDisplayID, code: VCPCode) throws -> VCPValue {
+    private func readVCPAlternative(displayId: CGDirectDisplayID, code: VCPCode) throws -> VCPValue
+    {
         guard let i2cInterface = getI2CInterfaceAlternative(for: displayId) else {
             throw DDCError.i2cNotSupported
         }
@@ -531,7 +577,8 @@ final class DDCService {
 
         var connect: IOI2CConnectRef?
         guard IOI2CInterfaceOpen(i2cInterface, 0, &connect) == KERN_SUCCESS,
-              let i2cConnect = connect else {
+            let i2cConnect = connect
+        else {
             throw DDCError.communicationFailed
         }
         defer { IOI2CInterfaceClose(i2cConnect, 0) }
@@ -571,7 +618,8 @@ final class DDCService {
         request.minReplyDelay = 50 * 1000 * 1000
 
         guard IOI2CSendRequest(i2cConnect, 0, &request) == KERN_SUCCESS,
-              request.result == KERN_SUCCESS else {
+            request.result == KERN_SUCCESS
+        else {
             throw DDCError.communicationFailed
         }
 
@@ -580,7 +628,8 @@ final class DDCService {
         // Parse reply - look for VCP reply marker (0x02) and extract values
         // Reply format varies, but typically: [source, length, 0x02, result, vcp_code, type, max_h, max_l, cur_h, cur_l, checksum]
         guard let markerIndex = reply.firstIndex(of: 0x02),
-              markerIndex + 7 < reply.count else {
+            markerIndex + 7 < reply.count
+        else {
             throw DDCError.invalidResponse
         }
 
@@ -598,7 +647,9 @@ final class DDCService {
     }
 
     /// Write VCP value using alternative I2C approach
-    private func writeVCPAlternative(displayId: CGDirectDisplayID, code: VCPCode, value: UInt16) throws {
+    private func writeVCPAlternative(displayId: CGDirectDisplayID, code: VCPCode, value: UInt16)
+        throws
+    {
         guard let i2cInterface = getI2CInterfaceAlternative(for: displayId) else {
             throw DDCError.i2cNotSupported
         }
@@ -606,13 +657,16 @@ final class DDCService {
 
         var connect: IOI2CConnectRef?
         guard IOI2CInterfaceOpen(i2cInterface, 0, &connect) == KERN_SUCCESS,
-              let i2cConnect = connect else {
+            let i2cConnect = connect
+        else {
             throw DDCError.communicationFailed
         }
         defer { IOI2CInterfaceClose(i2cConnect, 0) }
 
         // DDC/CI Set VCP Feature: [host addr, length | 0x80, Set VCP opcode (0x03), vcp code, value_h, value_l, checksum]
-        var msg: [UInt8] = [0x51, 0x84, 0x03, code.rawValue, UInt8((value >> 8) & 0xFF), UInt8(value & 0xFF), 0x00]
+        var msg: [UInt8] = [
+            0x51, 0x84, 0x03, code.rawValue, UInt8((value >> 8) & 0xFF), UInt8(value & 0xFF), 0x00,
+        ]
         var checksum: UInt8 = 0x6E
         for i in 0..<(msg.count - 1) {
             checksum ^= msg[i]
@@ -635,7 +689,8 @@ final class DDCService {
         request.replyBytes = 0
 
         guard IOI2CSendRequest(i2cConnect, 0, &request) == KERN_SUCCESS,
-              request.result == KERN_SUCCESS else {
+            request.result == KERN_SUCCESS
+        else {
             throw DDCError.communicationFailed
         }
     }
@@ -658,7 +713,8 @@ final class DDCService {
         var iterator: io_iterator_t = 0
 
         let matching = IOServiceMatching("IOFramebuffer")
-        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS
+        else {
             DDCService.debugLog("DDC: Failed to get IOFramebuffer services")
             return framebuffers
         }
@@ -686,7 +742,9 @@ final class DDCService {
         let targetModel = CGDisplayModelNumber(displayId)
         let targetSerial = CGDisplaySerialNumber(displayId)
 
-        DDCService.debugLog("DDC: Looking for framebuffer for display \(displayId) (vendor: \(String(format: "0x%04X", targetVendor)), model: \(targetModel), serial: \(targetSerial))")
+        DDCService.debugLog(
+            "DDC: Looking for framebuffer for display \(displayId) (vendor: \(String(format: "0x%04X", targetVendor)), model: \(targetModel), serial: \(targetSerial))"
+        )
 
         // Get all framebuffers with I2C support
         let framebuffers = getAllI2CFramebuffers()
@@ -703,7 +761,9 @@ final class DDCService {
         for service in framebuffers {
             // Try to find IODisplayConnect child to get display info
             var displayIterator: io_iterator_t = 0
-            if IORegistryEntryGetChildIterator(service, kIOServicePlane, &displayIterator) == KERN_SUCCESS {
+            if IORegistryEntryGetChildIterator(service, kIOServicePlane, &displayIterator)
+                == KERN_SUCCESS
+            {
                 defer { IOObjectRelease(displayIterator) }
 
                 var displayService = IOIteratorNext(displayIterator)
@@ -718,25 +778,33 @@ final class DDCService {
                     var productId: UInt32 = 0
                     var serialNum: UInt32 = 0
 
-                    if let vendorRef = IORegistryEntryCreateCFProperty(displayService, "DisplayVendorID" as CFString, kCFAllocatorDefault, 0) {
+                    if let vendorRef = IORegistryEntryCreateCFProperty(
+                        displayService, "DisplayVendorID" as CFString, kCFAllocatorDefault, 0)
+                    {
                         if let num = vendorRef.takeRetainedValue() as? NSNumber {
                             vendorId = num.uint32Value
                         }
                     }
 
-                    if let productRef = IORegistryEntryCreateCFProperty(displayService, "DisplayProductID" as CFString, kCFAllocatorDefault, 0) {
+                    if let productRef = IORegistryEntryCreateCFProperty(
+                        displayService, "DisplayProductID" as CFString, kCFAllocatorDefault, 0)
+                    {
                         if let num = productRef.takeRetainedValue() as? NSNumber {
                             productId = num.uint32Value
                         }
                     }
 
-                    if let serialRef = IORegistryEntryCreateCFProperty(displayService, "DisplaySerialNumber" as CFString, kCFAllocatorDefault, 0) {
+                    if let serialRef = IORegistryEntryCreateCFProperty(
+                        displayService, "DisplaySerialNumber" as CFString, kCFAllocatorDefault, 0)
+                    {
                         if let num = serialRef.takeRetainedValue() as? NSNumber {
                             serialNum = num.uint32Value
                         }
                     }
 
-                    DDCService.debugLog("DDC: Checking framebuffer child - vendor: \(String(format: "0x%04X", vendorId)), product: \(productId), serial: \(serialNum)")
+                    DDCService.debugLog(
+                        "DDC: Checking framebuffer child - vendor: \(String(format: "0x%04X", vendorId)), product: \(productId), serial: \(serialNum)"
+                    )
 
                     // Check if this matches our target display
                     if vendorId == targetVendor && productId == targetModel {
@@ -749,13 +817,17 @@ final class DDCService {
                         } else if serialNum == 0 && !foundExactMatch {
                             // Partial match: framebuffer has no serial but we need a specific one
                             // Keep searching for an exact match, but remember this as a fallback
-                            DDCService.debugLog("DDC: Found partial framebuffer match (vendor/product, unknown serial)")
+                            DDCService.debugLog(
+                                "DDC: Found partial framebuffer match (vendor/product, unknown serial)"
+                            )
                             if bestMatch == 0 {
                                 bestMatch = service
                             }
                         } else if !foundExactMatch && bestMatch == 0 {
                             // Different serial - keep as last resort fallback
-                            DDCService.debugLog("DDC: Found partial framebuffer match (vendor/product, different serial)")
+                            DDCService.debugLog(
+                                "DDC: Found partial framebuffer match (vendor/product, different serial)"
+                            )
                             bestMatch = service
                         }
                     }
@@ -779,7 +851,9 @@ final class DDCService {
         // No match found - on Apple Silicon with single external display, use the first framebuffer
         // This is a common fallback that works for most setups
         if framebuffers.count > 0 {
-            DDCService.debugLog("DDC: No exact framebuffer match found, using first available framebuffer as fallback")
+            DDCService.debugLog(
+                "DDC: No exact framebuffer match found, using first available framebuffer as fallback"
+            )
             // Release all but the first
             for i in 1..<framebuffers.count {
                 IOObjectRelease(framebuffers[i])
@@ -810,8 +884,12 @@ final class DDCService {
         // Try each I2C bus until we find one that works
         for bus in 0..<Int(busCount) {
             var i2cInterface: io_service_t = 0
-            guard IOFBCopyI2CInterfaceForBus(service, IOOptionBits(bus), &i2cInterface) == KERN_SUCCESS else {
-                DDCService.debugLog("DDC: sendI2CRequest - failed to get I2C interface for bus \(bus)")
+            guard
+                IOFBCopyI2CInterfaceForBus(service, IOOptionBits(bus), &i2cInterface)
+                    == KERN_SUCCESS
+            else {
+                DDCService.debugLog(
+                    "DDC: sendI2CRequest - failed to get I2C interface for bus \(bus)")
                 continue
             }
             defer { IOObjectRelease(i2cInterface) }
@@ -819,14 +897,19 @@ final class DDCService {
             // Open the I2C interface
             var i2cConnect: IOI2CConnectRef?
             guard IOI2CInterfaceOpen(i2cInterface, 0, &i2cConnect) == KERN_SUCCESS,
-                  let connect = i2cConnect else {
-                DDCService.debugLog("DDC: sendI2CRequest - failed to open I2C interface for bus \(bus)")
+                let connect = i2cConnect
+            else {
+                DDCService.debugLog(
+                    "DDC: sendI2CRequest - failed to open I2C interface for bus \(bus)")
                 continue
             }
             defer { IOI2CInterfaceClose(connect, 0) }
 
             // Send the DDC command
-            if performDDCTransaction(connect: connect, request: request, requestLength: requestLength, reply: &reply, replyLength: replyLength) {
+            if performDDCTransaction(
+                connect: connect, request: request, requestLength: requestLength, reply: &reply,
+                replyLength: replyLength)
+            {
                 DDCService.debugLog("DDC: sendI2CRequest - transaction succeeded on bus \(bus)")
                 return true
             } else {
@@ -934,7 +1017,9 @@ final class DDCService {
             }
 
             // Log first few bytes for debugging
-            let debugBytes = (0..<min(10, Int(i2cRequest.replyBytes))).map { String(format: "%02X", replyBuffer[$0]) }.joined(separator: " ")
+            let debugBytes = (0..<min(10, Int(i2cRequest.replyBytes))).map {
+                String(format: "%02X", replyBuffer[$0])
+            }.joined(separator: " ")
             DDCService.debugLog("DDC: Reply bytes: \(debugBytes)")
         }
 
@@ -951,7 +1036,10 @@ extension DDCService {
         // This is undocumented but widely used
         typealias GetBrightnessFunc = @convention(c) (UInt32) -> Float
 
-        guard let coreDisplay = dlopen("/System/Library/Frameworks/CoreDisplay.framework/CoreDisplay", RTLD_LAZY) else {
+        guard
+            let coreDisplay = dlopen(
+                "/System/Library/Frameworks/CoreDisplay.framework/CoreDisplay", RTLD_LAZY)
+        else {
             return nil
         }
         defer { dlclose(coreDisplay) }
@@ -975,7 +1063,10 @@ extension DDCService {
     func setBuiltInBrightness(_ brightness: Float) -> Bool {
         typealias SetBrightnessFunc = @convention(c) (UInt32, Double) -> Void
 
-        guard let coreDisplay = dlopen("/System/Library/Frameworks/CoreDisplay.framework/CoreDisplay", RTLD_LAZY) else {
+        guard
+            let coreDisplay = dlopen(
+                "/System/Library/Frameworks/CoreDisplay.framework/CoreDisplay", RTLD_LAZY)
+        else {
             return false
         }
         defer { dlclose(coreDisplay) }

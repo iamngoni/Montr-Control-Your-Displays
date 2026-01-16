@@ -213,10 +213,6 @@ private struct DisplayTabBar: View {
                             selectedIndex = 0
                         }
                     }
-
-                    Rectangle()
-                        .fill(MontrTheme.sliderTrack)
-                        .frame(width: 1, height: 20)
                 }
 
                 // Individual display tabs
@@ -230,13 +226,6 @@ private struct DisplayTabBar: View {
                         withAnimation(.easeInOut(duration: 0.15)) {
                             selectedIndex = tabIndex
                         }
-                    }
-
-                    // Separator between tabs (not after last)
-                    if index < displays.count - 1 {
-                        Rectangle()
-                            .fill(MontrTheme.sliderTrack)
-                            .frame(width: 1, height: 20)
                     }
                 }
             }
