@@ -82,11 +82,21 @@ final class DDCService {
 
         print("DDC: ========== Starting DDC support check for display \(displayId) ==========")
 
-        // Try to read brightness to test DDC support with retries
+        // Try alternative approach first (IODisplayConnect → recursive IOI2CInterface search)
+        // This approach uses simpler I2C transaction types that work on more hardware
+        if probeDDCAlternative(displayId: displayId) {
+            print("DDC: Alternative approach succeeded!")
+            ddcSupportCache[displayId] = true
+            usesAlternativeApproach.insert(displayId)
+            return true
+        }
+
+        print("DDC: Alternative approach failed, trying original approach...")
+
+        // Fall back to original approach with retries
         // DDC can be flaky, especially right after display connection
-        // Increased retries and delay for more reliable detection
         var supported = false
-        let maxRetries = 5  // Increased from 3
+        let maxRetries = 5
 
         for attempt in 1...maxRetries {
             do {
@@ -113,11 +123,13 @@ final class DDCService {
     /// Clear DDC support cache for a display
     func clearCache(for displayId: CGDirectDisplayID) {
         ddcSupportCache.removeValue(forKey: displayId)
+        usesAlternativeApproach.remove(displayId)
     }
 
     /// Clear all DDC support cache
     func clearAllCache() {
         ddcSupportCache.removeAll()
+        usesAlternativeApproach.removeAll()
     }
 
     /// Read brightness value (0-100)
@@ -204,6 +216,11 @@ final class DDCService {
     }
 
     private func readVCPValue(displayId: CGDirectDisplayID, code: VCPCode) throws -> VCPValue {
+        // Use alternative approach if this display was detected using it
+        if usesAlternativeApproach.contains(displayId) {
+            return try readVCPAlternative(displayId: displayId, code: code)
+        }
+
         guard let service = getFramebufferService(for: displayId) else {
             print("DDC: readVCPValue - framebuffer not found for display \(displayId)")
             throw DDCError.framebufferNotFound
@@ -248,6 +265,12 @@ final class DDCService {
     }
 
     private func writeVCPValue(displayId: CGDirectDisplayID, code: VCPCode, value: UInt16) throws {
+        // Use alternative approach if this display was detected using it
+        if usesAlternativeApproach.contains(displayId) {
+            try writeVCPAlternative(displayId: displayId, code: code, value: value)
+            return
+        }
+
         guard let service = getFramebufferService(for: displayId) else {
             throw DDCError.framebufferNotFound
         }
@@ -274,6 +297,342 @@ final class DDCService {
 
         guard sendI2CRequest(service: service, request: request, requestLength: 6, reply: &reply, replyLength: 0) else {
             throw DDCError.communicationFailed
+        }
+    }
+
+    // MARK: - Alternative DDC Approach (IODisplayConnect → IOI2CInterface)
+
+    /// Find IODisplayConnect service that matches the display ID by vendor/model/serial
+    private func getIODisplayConnect(for displayId: CGDirectDisplayID) -> io_service_t? {
+        let targetVendor = CGDisplayVendorNumber(displayId)
+        let targetModel = CGDisplayModelNumber(displayId)
+        let targetSerial = CGDisplaySerialNumber(displayId)
+
+        print("DDC: [Alt] Looking for IODisplayConnect for display \(displayId) (vendor: \(String(format: "0x%04X", targetVendor)), model: \(targetModel), serial: \(targetSerial))")
+
+        let matching = IOServiceMatching("IODisplayConnect")
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
+            print("DDC: [Alt] Failed to get IODisplayConnect services")
+            return nil
+        }
+        defer { IOObjectRelease(iterator) }
+
+        var service = IOIteratorNext(iterator)
+        while service != 0 {
+            // Get display info from IODisplayCreateInfoDictionary
+            let info = IODisplayCreateInfoDictionary(service, IOOptionBits(kIODisplayOnlyPreferredName)).takeRetainedValue() as NSDictionary
+
+            let vendorId = (info[kDisplayVendorID] as? UInt32) ?? 0
+            let productId = (info[kDisplayProductID] as? UInt32) ?? 0
+            let serialNum = (info[kDisplaySerialNumber] as? UInt32) ?? 0
+
+            print("DDC: [Alt] Checking IODisplayConnect - vendor: \(String(format: "0x%04X", vendorId)), product: \(productId), serial: \(serialNum)")
+
+            // Match vendor and model, serial can be 0 on either side
+            if vendorId == targetVendor && productId == targetModel {
+                if serialNum == targetSerial || targetSerial == 0 || serialNum == 0 {
+                    print("DDC: [Alt] Found matching IODisplayConnect!")
+                    IOObjectRetain(service)
+                    return service
+                }
+            }
+
+            IOObjectRelease(service)
+            service = IOIteratorNext(iterator)
+        }
+
+        print("DDC: [Alt] No matching IODisplayConnect found")
+        return nil
+    }
+
+    /// Walk up from IODisplayConnect to find the parent IOFramebuffer
+    private func getFramebufferFromDisplayConnect(_ displayConnect: io_service_t) -> io_service_t? {
+        var current = displayConnect
+        IOObjectRetain(current)
+
+        while true {
+            if IOObjectConformsTo(current, "IOFramebuffer") != 0 {
+                print("DDC: [Alt] Found IOFramebuffer parent")
+                return current
+            }
+
+            var parent: io_service_t = 0
+            if IORegistryEntryGetParentEntry(current, kIOServicePlane, &parent) != KERN_SUCCESS || parent == 0 {
+                IOObjectRelease(current)
+                print("DDC: [Alt] Failed to find IOFramebuffer parent")
+                return nil
+            }
+
+            IOObjectRelease(current)
+            current = parent
+        }
+    }
+
+    /// Recursively find first IOI2CInterface under a service
+    private func findI2CInterface(under service: io_service_t) -> io_service_t? {
+        var iterator: io_iterator_t = 0
+        guard IORegistryEntryCreateIterator(
+            service,
+            kIOServicePlane,
+            IOOptionBits(kIORegistryIterateRecursively),
+            &iterator
+        ) == KERN_SUCCESS else {
+            print("DDC: [Alt] Failed to create recursive iterator")
+            return nil
+        }
+        defer { IOObjectRelease(iterator) }
+
+        var obj = IOIteratorNext(iterator)
+        while obj != 0 {
+            if IOObjectConformsTo(obj, "IOI2CInterface") != 0 {
+                print("DDC: [Alt] Found IOI2CInterface via recursive search")
+                return obj  // Already retained by iterator
+            }
+            IOObjectRelease(obj)
+            obj = IOIteratorNext(iterator)
+        }
+
+        print("DDC: [Alt] No IOI2CInterface found via recursive search")
+        return nil
+    }
+
+    /// Get I2C interface for a display using alternative approach
+    private func getI2CInterfaceAlternative(for displayId: CGDirectDisplayID) -> io_service_t? {
+        // Step 1: Find the IODisplayConnect for this display
+        guard let displayConnect = getIODisplayConnect(for: displayId) else {
+            return nil
+        }
+        defer { IOObjectRelease(displayConnect) }
+
+        // Step 2: Walk up to the framebuffer
+        guard let framebuffer = getFramebufferFromDisplayConnect(displayConnect) else {
+            return nil
+        }
+        defer { IOObjectRelease(framebuffer) }
+
+        // Step 3: Find IOI2CInterface recursively under framebuffer
+        return findI2CInterface(under: framebuffer)
+    }
+
+    /// Probe DDC support using alternative approach (IODisplayConnect → recursive IOI2CInterface search)
+    private func probeDDCAlternative(displayId: CGDirectDisplayID) -> Bool {
+        print("DDC: [Alt] ========== Probing DDC via alternative approach ==========")
+
+        guard let i2cInterface = getI2CInterfaceAlternative(for: displayId) else {
+            print("DDC: [Alt] Failed to get I2C interface")
+            return false
+        }
+        defer { IOObjectRelease(i2cInterface) }
+
+        // Open I2C interface
+        var connect: IOI2CConnectRef?
+        guard IOI2CInterfaceOpen(i2cInterface, 0, &connect) == KERN_SUCCESS,
+              let i2cConnect = connect else {
+            print("DDC: [Alt] Failed to open I2C interface")
+            return false
+        }
+        defer { IOI2CInterfaceClose(i2cConnect, 0) }
+
+        // Build DDC/CI "Get VCP Feature" request for brightness (0x10)
+        // Using 7-bit address 0x37, simple transaction type
+        let vcpCode: UInt8 = 0x10  // Brightness
+
+        // DDC/CI packet: [host addr, length | 0x80, Get VCP opcode, VCP code, ..., checksum]
+        var msg: [UInt8] = [0x51, 0x82, 0x01, vcpCode, 0x00, 0x00, 0x00]
+
+        // Calculate checksum: XOR of write address (0x6E) and all bytes except last
+        var checksum: UInt8 = 0x6E
+        for i in 0..<(msg.count - 1) {
+            checksum ^= msg[i]
+        }
+        msg[msg.count - 1] = checksum
+
+        var reply = [UInt8](repeating: 0, count: 16)
+
+        // Allocate stable buffers
+        let sendBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: msg.count)
+        let replyBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: reply.count)
+        defer {
+            sendBuffer.deallocate()
+            replyBuffer.deallocate()
+        }
+
+        for i in 0..<msg.count {
+            sendBuffer[i] = msg[i]
+        }
+        replyBuffer.initialize(repeating: 0, count: reply.count)
+
+        // Build I2C request with 7-bit address and simple transaction type
+        var request = IOI2CRequest()
+        request.commFlags = 0
+        request.sendAddress = 0x37  // 7-bit DDC address
+        request.sendSubAddress = 0
+        request.sendTransactionType = kIOI2CSimpleTransactionType
+        request.sendBuffer = vm_address_t(bitPattern: sendBuffer)
+        request.sendBytes = UInt32(msg.count)
+
+        request.replyAddress = 0x37  // 7-bit DDC address
+        request.replySubAddress = 0
+        request.replyTransactionType = kIOI2CSimpleTransactionType
+        request.replyBuffer = vm_address_t(bitPattern: replyBuffer)
+        request.replyBytes = UInt32(reply.count)
+
+        request.minReplyDelay = 50 * 1000 * 1000  // 50ms in nanoseconds
+
+        let result = IOI2CSendRequest(i2cConnect, 0, &request)
+
+        guard result == KERN_SUCCESS else {
+            print("DDC: [Alt] IOI2CSendRequest failed: \(result)")
+            return false
+        }
+
+        guard request.result == KERN_SUCCESS else {
+            print("DDC: [Alt] I2C transaction failed: \(request.result)")
+            return false
+        }
+
+        // Copy reply
+        for i in 0..<Int(request.replyBytes) {
+            reply[i] = replyBuffer[i]
+        }
+
+        let replyStr = reply.prefix(Int(request.replyBytes)).map { String(format: "%02X", $0) }.joined(separator: " ")
+        print("DDC: [Alt] Reply (\(request.replyBytes) bytes): \(replyStr)")
+
+        // Check for VCP Feature Reply marker (0x02)
+        let supported = reply.contains(0x02)
+        print("DDC: [Alt] DDC probe result: \(supported ? "SUPPORTED" : "NOT SUPPORTED")")
+        return supported
+    }
+
+    /// Read VCP value using alternative I2C approach
+    private func readVCPAlternative(displayId: CGDirectDisplayID, code: VCPCode) throws -> VCPValue {
+        guard let i2cInterface = getI2CInterfaceAlternative(for: displayId) else {
+            throw DDCError.i2cNotSupported
+        }
+        defer { IOObjectRelease(i2cInterface) }
+
+        var connect: IOI2CConnectRef?
+        guard IOI2CInterfaceOpen(i2cInterface, 0, &connect) == KERN_SUCCESS,
+              let i2cConnect = connect else {
+            throw DDCError.communicationFailed
+        }
+        defer { IOI2CInterfaceClose(i2cConnect, 0) }
+
+        // DDC/CI Get VCP Feature request
+        var msg: [UInt8] = [0x51, 0x82, 0x01, code.rawValue, 0x00, 0x00, 0x00]
+        var checksum: UInt8 = 0x6E
+        for i in 0..<(msg.count - 1) {
+            checksum ^= msg[i]
+        }
+        msg[msg.count - 1] = checksum
+
+        var reply = [UInt8](repeating: 0, count: 16)
+
+        let sendBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: msg.count)
+        let replyBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: reply.count)
+        defer {
+            sendBuffer.deallocate()
+            replyBuffer.deallocate()
+        }
+
+        for i in 0..<msg.count { sendBuffer[i] = msg[i] }
+        replyBuffer.initialize(repeating: 0, count: reply.count)
+
+        var request = IOI2CRequest()
+        request.commFlags = 0
+        request.sendAddress = 0x37
+        request.sendSubAddress = 0
+        request.sendTransactionType = kIOI2CSimpleTransactionType
+        request.sendBuffer = vm_address_t(bitPattern: sendBuffer)
+        request.sendBytes = UInt32(msg.count)
+        request.replyAddress = 0x37
+        request.replySubAddress = 0
+        request.replyTransactionType = kIOI2CSimpleTransactionType
+        request.replyBuffer = vm_address_t(bitPattern: replyBuffer)
+        request.replyBytes = UInt32(reply.count)
+        request.minReplyDelay = 50 * 1000 * 1000
+
+        guard IOI2CSendRequest(i2cConnect, 0, &request) == KERN_SUCCESS,
+              request.result == KERN_SUCCESS else {
+            throw DDCError.communicationFailed
+        }
+
+        for i in 0..<Int(request.replyBytes) { reply[i] = replyBuffer[i] }
+
+        // Parse reply - look for VCP reply marker (0x02) and extract values
+        // Reply format varies, but typically: [source, length, 0x02, result, vcp_code, type, max_h, max_l, cur_h, cur_l, checksum]
+        guard let markerIndex = reply.firstIndex(of: 0x02),
+              markerIndex + 7 < reply.count else {
+            throw DDCError.invalidResponse
+        }
+
+        let maxValue = UInt16(reply[markerIndex + 4]) << 8 | UInt16(reply[markerIndex + 5])
+        let currentValue = UInt16(reply[markerIndex + 6]) << 8 | UInt16(reply[markerIndex + 7])
+
+        let normalizedCurrent: UInt16
+        if maxValue > 0 && maxValue != 100 {
+            normalizedCurrent = UInt16(Double(currentValue) / Double(maxValue) * 100)
+        } else {
+            normalizedCurrent = currentValue
+        }
+
+        return VCPValue(current: normalizedCurrent, maximum: maxValue)
+    }
+
+    /// Write VCP value using alternative I2C approach
+    private func writeVCPAlternative(displayId: CGDirectDisplayID, code: VCPCode, value: UInt16) throws {
+        guard let i2cInterface = getI2CInterfaceAlternative(for: displayId) else {
+            throw DDCError.i2cNotSupported
+        }
+        defer { IOObjectRelease(i2cInterface) }
+
+        var connect: IOI2CConnectRef?
+        guard IOI2CInterfaceOpen(i2cInterface, 0, &connect) == KERN_SUCCESS,
+              let i2cConnect = connect else {
+            throw DDCError.communicationFailed
+        }
+        defer { IOI2CInterfaceClose(i2cConnect, 0) }
+
+        // DDC/CI Set VCP Feature: [host addr, length | 0x80, Set VCP opcode (0x03), vcp code, value_h, value_l, checksum]
+        var msg: [UInt8] = [0x51, 0x84, 0x03, code.rawValue, UInt8((value >> 8) & 0xFF), UInt8(value & 0xFF), 0x00]
+        var checksum: UInt8 = 0x6E
+        for i in 0..<(msg.count - 1) {
+            checksum ^= msg[i]
+        }
+        msg[msg.count - 1] = checksum
+
+        let sendBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: msg.count)
+        defer { sendBuffer.deallocate() }
+
+        for i in 0..<msg.count { sendBuffer[i] = msg[i] }
+
+        var request = IOI2CRequest()
+        request.commFlags = 0
+        request.sendAddress = 0x37
+        request.sendSubAddress = 0
+        request.sendTransactionType = kIOI2CSimpleTransactionType
+        request.sendBuffer = vm_address_t(bitPattern: sendBuffer)
+        request.sendBytes = UInt32(msg.count)
+        request.replyTransactionType = kIOI2CNoTransactionType
+        request.replyBytes = 0
+
+        guard IOI2CSendRequest(i2cConnect, 0, &request) == KERN_SUCCESS,
+              request.result == KERN_SUCCESS else {
+            throw DDCError.communicationFailed
+        }
+    }
+
+    /// Track which displays use the alternative approach
+    private var usesAlternativeApproach: Set<CGDirectDisplayID> = []
+
+    /// Mark a display as using the alternative approach
+    func setUsesAlternativeApproach(_ displayId: CGDirectDisplayID, _ uses: Bool) {
+        if uses {
+            usesAlternativeApproach.insert(displayId)
+        } else {
+            usesAlternativeApproach.remove(displayId)
         }
     }
 
