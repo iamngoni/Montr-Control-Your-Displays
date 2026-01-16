@@ -78,7 +78,7 @@ struct PopoverContentView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
         }
-        .frame(width: 320, height: 420)
+        .frame(width: 360, height: 420)
         .background(MontrTheme.background)
         .onChange(of: displayManager.displays.count) { _, newCount in
             // Reset selection if needed when displays change
@@ -290,6 +290,7 @@ private struct AllDisplaysContent: View {
     @StateObject private var brightnessController = BrightnessController.shared
     @StateObject private var colorTempController = ColorTemperatureController.shared
     @State private var brightness: Double = 100
+    @State private var contrast: Double = 75
     @State private var volume: Double = 50
     @State private var isMuted: Bool = false
     @State private var temperature: Double = 6500
@@ -308,11 +309,28 @@ private struct AllDisplaysContent: View {
         displays.contains { brightnessController.supportsVolume(for: $0) }
     }
 
+    // Check if any display supports contrast (external DDC displays)
+    private var anySupportsContrast: Bool {
+        displays.contains { $0.supportsDDC && !$0.isBuiltIn }
+    }
+
+    // Displays that support contrast
+    private var contrastDisplays: [Display] {
+        displays.filter { $0.supportsDDC && !$0.isBuiltIn }
+    }
+
     // Calculate average brightness across all displays
     private var averageBrightness: Double {
         guard !displays.isEmpty else { return 100 }
         let total = displays.reduce(0) { $0 + brightnessController.getBrightness(for: $1) }
         return Double(total) / Double(displays.count)
+    }
+
+    // Calculate average contrast across contrast-supporting displays
+    private var averageContrast: Double {
+        guard !contrastDisplays.isEmpty else { return 75 }
+        let total = contrastDisplays.reduce(0) { $0 + brightnessController.getContrast(for: $1) }
+        return Double(total) / Double(contrastDisplays.count)
     }
 
     // Calculate average volume across volume-supporting displays
@@ -434,6 +452,86 @@ private struct AllDisplaysContent: View {
                         .foregroundColor(MontrTheme.textPrimary)
                         .frame(width: 40, alignment: .trailing)
                         .monospacedDigit()
+                }
+            }
+
+            // Contrast control (only if any display supports it)
+            if anySupportsContrast {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("CONTRAST")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(MontrTheme.textSecondary)
+                        .tracking(0.5)
+
+                    HStack(spacing: 12) {
+                        Image(systemName: "circle.lefthalf.filled")
+                            .font(.system(size: 12))
+                            .foregroundColor(MontrTheme.textSecondary)
+
+                        // Custom slider
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                // Track background
+                                Capsule()
+                                    .fill(MontrTheme.sliderTrack)
+                                    .frame(height: 6)
+
+                                // Filled track
+                                Capsule()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [MontrTheme.tealDark, MontrTheme.teal],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                                    .frame(
+                                        width: max(6, geometry.size.width * (contrast / 100)), height: 6)
+
+                                // Thumb
+                                Circle()
+                                    .fill(.white)
+                                    .frame(width: 14, height: 14)
+                                    .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                                    .offset(
+                                        x: max(
+                                            0,
+                                            min(
+                                                geometry.size.width - 14,
+                                                (geometry.size.width - 14) * (contrast / 100))))
+                            }
+                            .frame(height: 20)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { gesture in
+                                        let newValue = min(
+                                            max(0, gesture.location.x / geometry.size.width * 100), 100)
+                                        contrast = newValue
+                                    }
+                                    .onEnded { _ in
+                                        // Apply contrast to all DDC displays
+                                        Task {
+                                            for display in contrastDisplays {
+                                                await brightnessController.setContrast(
+                                                    for: display, value: Int(contrast))
+                                            }
+                                        }
+                                    }
+                            )
+                        }
+                        .frame(height: 20)
+
+                        Image(systemName: "circle.righthalf.filled")
+                            .font(.system(size: 12))
+                            .foregroundColor(MontrTheme.textSecondary)
+
+                        Text("\(Int(contrast))%")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(MontrTheme.textPrimary)
+                            .frame(width: 40, alignment: .trailing)
+                            .monospacedDigit()
+                    }
                 }
             }
 
@@ -647,6 +745,7 @@ private struct AllDisplaysContent: View {
         .padding(16)
         .onAppear {
             brightness = averageBrightness
+            contrast = averageContrast
             volume = averageVolume
             temperature = Double(colorTempController.globalTemperature)
         }
@@ -696,6 +795,7 @@ private struct DisplayTabContent: View {
     @StateObject private var brightnessController = BrightnessController.shared
     @StateObject private var colorTempController = ColorTemperatureController.shared
     @State private var brightness: Double = 100
+    @State private var contrast: Double = 75
     @State private var volume: Double = 50
     @State private var isMuted: Bool = false
     @State private var temperature: Double = 6500
@@ -712,6 +812,11 @@ private struct DisplayTabContent: View {
 
     private var supportsVolume: Bool {
         brightnessController.supportsVolume(for: display)
+    }
+
+    // Contrast only supported for external DDC displays
+    private var supportsContrast: Bool {
+        display.supportsDDC && !display.isBuiltIn
     }
 
     var body: some View {
@@ -818,6 +923,83 @@ private struct DisplayTabContent: View {
                         .foregroundColor(MontrTheme.textPrimary)
                         .frame(width: 40, alignment: .trailing)
                         .monospacedDigit()
+                }
+            }
+
+            // Contrast control (only for DDC displays)
+            if supportsContrast {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("CONTRAST")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(MontrTheme.textSecondary)
+                        .tracking(0.5)
+
+                    HStack(spacing: 12) {
+                        Image(systemName: "circle.lefthalf.filled")
+                            .font(.system(size: 12))
+                            .foregroundColor(MontrTheme.textSecondary)
+
+                        // Custom slider
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                // Track background
+                                Capsule()
+                                    .fill(MontrTheme.sliderTrack)
+                                    .frame(height: 6)
+
+                                // Filled track
+                                Capsule()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [MontrTheme.tealDark, MontrTheme.teal],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                                    .frame(
+                                        width: max(6, geometry.size.width * (contrast / 100)), height: 6)
+
+                                // Thumb
+                                Circle()
+                                    .fill(.white)
+                                    .frame(width: 14, height: 14)
+                                    .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                                    .offset(
+                                        x: max(
+                                            0,
+                                            min(
+                                                geometry.size.width - 14,
+                                                (geometry.size.width - 14) * (contrast / 100))))
+                            }
+                            .frame(height: 20)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { gesture in
+                                        let newValue = min(
+                                            max(0, gesture.location.x / geometry.size.width * 100), 100)
+                                        contrast = newValue
+                                    }
+                                    .onEnded { _ in
+                                        Task {
+                                            await brightnessController.setContrast(
+                                                for: display, value: Int(contrast))
+                                        }
+                                    }
+                            )
+                        }
+                        .frame(height: 20)
+
+                        Image(systemName: "circle.righthalf.filled")
+                            .font(.system(size: 12))
+                            .foregroundColor(MontrTheme.textSecondary)
+
+                        Text("\(Int(contrast))%")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(MontrTheme.textPrimary)
+                            .frame(width: 40, alignment: .trailing)
+                            .monospacedDigit()
+                    }
                 }
             }
 
@@ -1023,6 +1205,9 @@ private struct DisplayTabContent: View {
         .onAppear {
             brightness = Double(brightnessController.getBrightness(for: display))
             temperature = Double(colorTempController.getTemperature(for: display))
+            if supportsContrast {
+                contrast = Double(brightnessController.getContrast(for: display))
+            }
             if supportsVolume {
                 volume = Double(brightnessController.getVolume(for: display))
                 isMuted = brightnessController.isMuted(for: display)
@@ -1032,6 +1217,12 @@ private struct DisplayTabContent: View {
             _, newValue in
             if let newValue {
                 brightness = Double(newValue)
+            }
+        }
+        .onChange(of: brightnessController.displayContrast[display.stableIdentifier]) {
+            _, newValue in
+            if let newValue {
+                contrast = Double(newValue)
             }
         }
         .onChange(of: brightnessController.displayVolume[display.stableIdentifier]) {
@@ -1219,5 +1410,5 @@ private struct EmptyDisplayState: View {
 
 #Preview {
     PopoverContentView()
-        .frame(width: 320, height: 420)
+        .frame(width: 360, height: 420)
 }
