@@ -53,6 +53,15 @@ struct Display: Identifiable, Codable, Hashable {
         return supportsDDC ? "DDC/CI" : "Software"
     }
 
+    /// Short display name for tab bar (truncated if too long)
+    var shortDisplayName: String {
+        let name = displayName
+        if name.count > 18 {
+            return String(name.prefix(15)) + "..."
+        }
+        return name
+    }
+
     // MARK: - Connection Type
 
     enum ConnectionType: String, Codable {
@@ -64,6 +73,20 @@ struct Display: Identifiable, Codable, Hashable {
         case dvi = "DVI"
         case vga = "VGA"
         case unknown = "Unknown"
+
+        /// Human-readable display name
+        var displayName: String {
+            switch self {
+            case .builtIn: return "Built-in Display"
+            case .hdmi: return "HDMI"
+            case .displayPort: return "DisplayPort"
+            case .usbc: return "USB-C"
+            case .thunderbolt: return "Thunderbolt"
+            case .dvi: return "DVI"
+            case .vga: return "VGA"
+            case .unknown: return "External Display"
+            }
+        }
     }
 
     // MARK: - Codable

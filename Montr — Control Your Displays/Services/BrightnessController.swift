@@ -9,6 +9,9 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
 
     @Published private(set) var displayBrightness: [String: Int] = [:]
     @Published private(set) var displayContrast: [String: Int] = [:]
+    @Published private(set) var displayVolume: [String: Int] = [:]
+    @Published private(set) var displayMuted: [String: Bool] = [:]
+    @Published private(set) var volumeSupportedDisplays: Set<String> = []
     @Published var quickDimEnabled: Bool = false
     @Published var syncAllDisplays: Bool = false
 
@@ -95,6 +98,120 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
         SettingsManager.shared.saveContrast(clampedValue, for: identifier)
     }
 
+    // MARK: - Volume Control
+
+    /// Check if a display supports volume control
+    func supportsVolume(for display: Display) -> Bool {
+        volumeSupportedDisplays.contains(display.stableIdentifier)
+    }
+
+    /// Get volume for a display
+    func getVolume(for display: Display) -> Int {
+        displayVolume[display.stableIdentifier] ?? 50
+    }
+
+    /// Set volume for a display (DDC only)
+    func setVolume(for display: Display, value: Int) async {
+        guard display.supportsDDC && !display.isBuiltIn else { return }
+        guard supportsVolume(for: display) else { return }
+
+        let clampedValue = max(0, min(100, value))
+        let identifier = display.stableIdentifier
+
+        displayVolume[identifier] = clampedValue
+
+        // Run DDC command on background queue to prevent UI freezing
+        let ddcService = self.ddcService
+        let displayId = display.id
+        await withCheckedContinuation { continuation in
+            ddcQueue.async {
+                do {
+                    try ddcService.setVolume(displayId: displayId, value: clampedValue)
+                } catch {
+                    print("Failed to set volume via DDC: \(error)")
+                }
+                continuation.resume()
+            }
+        }
+
+        SettingsManager.shared.saveVolume(clampedValue, for: identifier)
+
+        // Post notification for potential HUD
+        NotificationCenter.default.post(
+            name: .volumeDidChange,
+            object: nil,
+            userInfo: ["displayId": identifier, "volume": clampedValue]
+        )
+    }
+
+    /// Get mute state for a display
+    func isMuted(for display: Display) -> Bool {
+        displayMuted[display.stableIdentifier] ?? false
+    }
+
+    /// Toggle mute for a display
+    func toggleMute(for display: Display) async {
+        guard display.supportsDDC && !display.isBuiltIn else { return }
+        guard supportsVolume(for: display) else { return }
+
+        let identifier = display.stableIdentifier
+        let currentMuted = displayMuted[identifier] ?? false
+        let newMuted = !currentMuted
+
+        displayMuted[identifier] = newMuted
+
+        // Run DDC command on background queue
+        let ddcService = self.ddcService
+        let displayId = display.id
+        await withCheckedContinuation { continuation in
+            ddcQueue.async {
+                do {
+                    try ddcService.setMute(displayId: displayId, muted: newMuted)
+                } catch {
+                    print("Failed to set mute via DDC: \(error)")
+                }
+                continuation.resume()
+            }
+        }
+
+        SettingsManager.shared.saveMuted(newMuted, for: identifier)
+    }
+
+    /// Set mute state for a display
+    func setMuted(for display: Display, muted: Bool) async {
+        guard display.supportsDDC && !display.isBuiltIn else { return }
+        guard supportsVolume(for: display) else { return }
+
+        let identifier = display.stableIdentifier
+        displayMuted[identifier] = muted
+
+        let ddcService = self.ddcService
+        let displayId = display.id
+        await withCheckedContinuation { continuation in
+            ddcQueue.async {
+                do {
+                    try ddcService.setMute(displayId: displayId, muted: muted)
+                } catch {
+                    print("Failed to set mute via DDC: \(error)")
+                }
+                continuation.resume()
+            }
+        }
+
+        SettingsManager.shared.saveMuted(muted, for: identifier)
+    }
+
+    /// Adjust volume by delta for all displays that support it
+    func adjustVolumeForAll(by delta: Int) async {
+        let displays = await DisplayManager.shared.displays
+
+        for display in displays where supportsVolume(for: display) {
+            let current = getVolume(for: display)
+            let newValue = current + delta
+            await setVolume(for: display, value: newValue)
+        }
+    }
+
     /// Adjust brightness by delta for all displays
     func adjustBrightnessForAll(by delta: Int) async {
         let displays = await DisplayManager.shared.displays
@@ -160,6 +277,8 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
     private func loadSavedBrightness() {
         displayBrightness = SettingsManager.shared.savedBrightness
         displayContrast = SettingsManager.shared.savedContrast
+        displayVolume = SettingsManager.shared.savedVolume
+        displayMuted = SettingsManager.shared.savedMuted
     }
 
     private func setupObservers() {
@@ -182,6 +301,48 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
             if let savedBrightness = displayBrightness[identifier] {
                 await setBrightness(for: display, value: savedBrightness)
             }
+
+            // Check volume support for DDC displays
+            if display.supportsDDC && !display.isBuiltIn {
+                await checkVolumeSupport(for: display)
+            }
+        }
+    }
+
+    private func checkVolumeSupport(for display: Display) async {
+        let ddcService = self.ddcService
+        let displayId = display.id
+        let identifier = display.stableIdentifier
+
+        let supported = await withCheckedContinuation { continuation in
+            ddcQueue.async {
+                let result = ddcService.supportsVolume(displayId: displayId)
+                continuation.resume(returning: result)
+            }
+        }
+
+        if supported {
+            volumeSupportedDisplays.insert(identifier)
+
+            // Load saved volume if available
+            if let savedVolume = displayVolume[identifier] {
+                displayVolume[identifier] = savedVolume
+            } else {
+                // Try to read current volume from display
+                let currentVolume = await withCheckedContinuation { continuation in
+                    ddcQueue.async {
+                        do {
+                            let volume = try ddcService.readVolume(displayId: displayId)
+                            continuation.resume(returning: volume)
+                        } catch {
+                            continuation.resume(returning: 50) // Default
+                        }
+                    }
+                }
+                displayVolume[identifier] = currentVolume
+            }
+        } else {
+            volumeSupportedDisplays.remove(identifier)
         }
     }
 
@@ -220,4 +381,5 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
 
 extension Notification.Name {
     static let brightnessDidChange = Notification.Name("brightnessDidChange")
+    static let volumeDidChange = Notification.Name("volumeDidChange")
 }
