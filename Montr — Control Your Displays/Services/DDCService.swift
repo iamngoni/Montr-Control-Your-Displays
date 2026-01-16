@@ -80,15 +80,24 @@ final class DDCService {
             return cached
         }
 
-        // Try to read brightness to test DDC support
-        let supported: Bool
-        do {
-            let brightness = try readBrightness(displayId: displayId)
-            print("DDC: Successfully read brightness (\(brightness)) for display \(displayId)")
-            supported = true
-        } catch {
-            print("DDC: Failed to read brightness for display \(displayId): \(error)")
-            supported = false
+        // Try to read brightness to test DDC support with retries
+        // DDC can be flaky, especially right after display connection
+        var supported = false
+        let maxRetries = 3
+
+        for attempt in 1...maxRetries {
+            do {
+                let brightness = try readBrightness(displayId: displayId)
+                print("DDC: Successfully read brightness (\(brightness)) for display \(displayId) on attempt \(attempt)")
+                supported = true
+                break
+            } catch {
+                print("DDC: Failed to read brightness for display \(displayId) on attempt \(attempt): \(error)")
+                if attempt < maxRetries {
+                    // Small delay before retry
+                    Thread.sleep(forTimeInterval: 0.1)
+                }
+            }
         }
 
         ddcSupportCache[displayId] = supported
@@ -157,12 +166,26 @@ final class DDCService {
 
     /// Check if display supports volume control
     func supportsVolume(displayId: CGDirectDisplayID) -> Bool {
-        do {
-            _ = try readVolume(displayId: displayId)
-            return true
-        } catch {
-            return false
+        print("DDC: Checking volume support for display \(displayId)")
+
+        // Try multiple times - DDC can be flaky
+        let maxRetries = 3
+
+        for attempt in 1...maxRetries {
+            do {
+                let volume = try readVolume(displayId: displayId)
+                print("DDC: Successfully read volume (\(volume)) for display \(displayId) on attempt \(attempt) - volume supported")
+                return true
+            } catch {
+                print("DDC: Failed to read volume for display \(displayId) on attempt \(attempt): \(error)")
+                if attempt < maxRetries {
+                    Thread.sleep(forTimeInterval: 0.1)
+                }
+            }
         }
+
+        print("DDC: Volume not supported for display \(displayId) after \(maxRetries) attempts")
+        return false
     }
 
     // MARK: - Private Methods
@@ -174,6 +197,7 @@ final class DDCService {
 
     private func readVCPValue(displayId: CGDirectDisplayID, code: VCPCode) throws -> VCPValue {
         guard let service = getFramebufferService(for: displayId) else {
+            print("DDC: readVCPValue - framebuffer not found for display \(displayId)")
             throw DDCError.framebufferNotFound
         }
         defer { IOObjectRelease(service) }
@@ -189,6 +213,7 @@ final class DDCService {
 
         // Send I2C request
         guard sendI2CRequest(service: service, request: request, requestLength: 3, reply: &reply, replyLength: 12) else {
+            print("DDC: readVCPValue - I2C communication failed for VCP code 0x\(String(format: "%02X", code.rawValue))")
             throw DDCError.communicationFailed
         }
 
@@ -196,6 +221,7 @@ final class DDCService {
         // Expected format: result code, vcp code, type, max_high, max_low, current_high, current_low
         guard reply[0] == 0x02, // Result code OK
               reply[2] == code.rawValue else {
+            print("DDC: readVCPValue - invalid response for VCP code 0x\(String(format: "%02X", code.rawValue)): reply[0]=0x\(String(format: "%02X", reply[0])), reply[2]=0x\(String(format: "%02X", reply[2]))")
             throw DDCError.invalidResponse
         }
 
@@ -364,13 +390,17 @@ final class DDCService {
         // Get I2C interface count for this framebuffer
         var busCount: IOItemCount = 0
         guard IOFBGetI2CInterfaceCount(service, &busCount) == KERN_SUCCESS, busCount > 0 else {
+            print("DDC: sendI2CRequest - no I2C interfaces found")
             return false
         }
+
+        print("DDC: sendI2CRequest - found \(busCount) I2C bus(es)")
 
         // Try each I2C bus until we find one that works
         for bus in 0..<Int(busCount) {
             var i2cInterface: io_service_t = 0
             guard IOFBCopyI2CInterfaceForBus(service, IOOptionBits(bus), &i2cInterface) == KERN_SUCCESS else {
+                print("DDC: sendI2CRequest - failed to get I2C interface for bus \(bus)")
                 continue
             }
             defer { IOObjectRelease(i2cInterface) }
@@ -379,16 +409,21 @@ final class DDCService {
             var i2cConnect: IOI2CConnectRef?
             guard IOI2CInterfaceOpen(i2cInterface, 0, &i2cConnect) == KERN_SUCCESS,
                   let connect = i2cConnect else {
+                print("DDC: sendI2CRequest - failed to open I2C interface for bus \(bus)")
                 continue
             }
             defer { IOI2CInterfaceClose(connect, 0) }
 
             // Send the DDC command
             if performDDCTransaction(connect: connect, request: request, requestLength: requestLength, reply: &reply, replyLength: replyLength) {
+                print("DDC: sendI2CRequest - transaction succeeded on bus \(bus)")
                 return true
+            } else {
+                print("DDC: sendI2CRequest - transaction failed on bus \(bus)")
             }
         }
 
+        print("DDC: sendI2CRequest - all buses failed")
         return false
     }
 
