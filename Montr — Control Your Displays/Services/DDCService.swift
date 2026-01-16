@@ -80,27 +80,33 @@ final class DDCService {
             return cached
         }
 
+        print("DDC: ========== Starting DDC support check for display \(displayId) ==========")
+
         // Try to read brightness to test DDC support with retries
         // DDC can be flaky, especially right after display connection
+        // Increased retries and delay for more reliable detection
         var supported = false
-        let maxRetries = 3
+        let maxRetries = 5  // Increased from 3
 
         for attempt in 1...maxRetries {
             do {
                 let brightness = try readBrightness(displayId: displayId)
-                print("DDC: Successfully read brightness (\(brightness)) for display \(displayId) on attempt \(attempt)")
+                print("DDC: SUCCESS! Read brightness (\(brightness)) for display \(displayId) on attempt \(attempt)")
                 supported = true
                 break
             } catch {
-                print("DDC: Failed to read brightness for display \(displayId) on attempt \(attempt): \(error)")
+                print("DDC: Attempt \(attempt)/\(maxRetries) failed for display \(displayId): \(error)")
                 if attempt < maxRetries {
-                    // Small delay before retry
-                    Thread.sleep(forTimeInterval: 0.1)
+                    // Increasing delay between retries - some monitors are slow
+                    let delay = 0.2 * Double(attempt)  // 0.2s, 0.4s, 0.6s, 0.8s
+                    print("DDC: Waiting \(delay)s before retry...")
+                    Thread.sleep(forTimeInterval: delay)
                 }
             }
         }
 
         ddcSupportCache[displayId] = supported
+        print("DDC: ========== DDC support check complete for display \(displayId): \(supported ? "SUPPORTED" : "NOT SUPPORTED") ==========")
         return supported
     }
 
@@ -166,25 +172,27 @@ final class DDCService {
 
     /// Check if display supports volume control
     func supportsVolume(displayId: CGDirectDisplayID) -> Bool {
-        print("DDC: Checking volume support for display \(displayId)")
+        print("DDC: ========== Checking volume support for display \(displayId) ==========")
 
         // Try multiple times - DDC can be flaky
-        let maxRetries = 3
+        let maxRetries = 5  // Increased from 3
 
         for attempt in 1...maxRetries {
             do {
                 let volume = try readVolume(displayId: displayId)
-                print("DDC: Successfully read volume (\(volume)) for display \(displayId) on attempt \(attempt) - volume supported")
+                print("DDC: SUCCESS! Read volume (\(volume)) for display \(displayId) on attempt \(attempt) - volume SUPPORTED")
                 return true
             } catch {
-                print("DDC: Failed to read volume for display \(displayId) on attempt \(attempt): \(error)")
+                print("DDC: Volume attempt \(attempt)/\(maxRetries) failed for display \(displayId): \(error)")
                 if attempt < maxRetries {
-                    Thread.sleep(forTimeInterval: 0.1)
+                    let delay = 0.2 * Double(attempt)
+                    print("DDC: Waiting \(delay)s before volume retry...")
+                    Thread.sleep(forTimeInterval: delay)
                 }
             }
         }
 
-        print("DDC: Volume not supported for display \(displayId) after \(maxRetries) attempts")
+        print("DDC: ========== Volume NOT supported for display \(displayId) after \(maxRetries) attempts ==========")
         return false
     }
 
@@ -269,17 +277,35 @@ final class DDCService {
         }
     }
 
-    private func getFramebufferService(for displayId: CGDirectDisplayID) -> io_service_t? {
-        // Iterate through all framebuffers and match by vendor/product ID
+    /// Get all framebuffer services that have I2C support
+    private func getAllI2CFramebuffers() -> [io_service_t] {
+        var framebuffers: [io_service_t] = []
         var iterator: io_iterator_t = 0
 
         let matching = IOServiceMatching("IOFramebuffer")
         guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
             print("DDC: Failed to get IOFramebuffer services")
-            return nil
+            return framebuffers
         }
         defer { IOObjectRelease(iterator) }
 
+        var service = IOIteratorNext(iterator)
+        while service != 0 {
+            var busCount: IOItemCount = 0
+            if IOFBGetI2CInterfaceCount(service, &busCount) == KERN_SUCCESS && busCount > 0 {
+                print("DDC: Found framebuffer with \(busCount) I2C bus(es)")
+                framebuffers.append(service)
+            } else {
+                IOObjectRelease(service)
+            }
+            service = IOIteratorNext(iterator)
+        }
+
+        print("DDC: Found \(framebuffers.count) framebuffer(s) with I2C support")
+        return framebuffers
+    }
+
+    private func getFramebufferService(for displayId: CGDirectDisplayID) -> io_service_t? {
         // Get the display's vendor and model IDs for matching
         let targetVendor = CGDisplayVendorNumber(displayId)
         let targetModel = CGDisplayModelNumber(displayId)
@@ -287,11 +313,19 @@ final class DDCService {
 
         print("DDC: Looking for framebuffer for display \(displayId) (vendor: \(String(format: "0x%04X", targetVendor)), model: \(targetModel), serial: \(targetSerial))")
 
+        // Get all framebuffers with I2C support
+        let framebuffers = getAllI2CFramebuffers()
+
+        if framebuffers.isEmpty {
+            print("DDC: No framebuffers with I2C support found")
+            return nil
+        }
+
+        // Try to find an exact match first
         var bestMatch: io_service_t = 0
         var foundExactMatch = false
 
-        var service = IOIteratorNext(iterator)
-        while service != 0 {
+        for service in framebuffers {
             // Try to find IODisplayConnect child to get display info
             var displayIterator: io_iterator_t = 0
             if IORegistryEntryGetChildIterator(service, kIOServicePlane, &displayIterator) == KERN_SUCCESS {
@@ -299,6 +333,11 @@ final class DDCService {
 
                 var displayService = IOIteratorNext(displayIterator)
                 while displayService != 0 {
+                    defer {
+                        IOObjectRelease(displayService)
+                        displayService = IOIteratorNext(displayIterator)
+                    }
+
                     // Check for DisplayVendorID and DisplayProductID
                     var vendorId: UInt32 = 0
                     var productId: UInt32 = 0
@@ -322,62 +361,52 @@ final class DDCService {
                         }
                     }
 
-                    IOObjectRelease(displayService)
+                    print("DDC: Checking framebuffer child - vendor: \(String(format: "0x%04X", vendorId)), product: \(productId), serial: \(serialNum)")
 
                     // Check if this matches our target display
                     if vendorId == targetVendor && productId == targetModel {
-                        if serialNum == targetSerial || targetSerial == 0 {
+                        if serialNum == targetSerial || targetSerial == 0 || serialNum == 0 {
                             // Exact match found
-                            if bestMatch != 0 {
-                                IOObjectRelease(bestMatch)
-                            }
+                            print("DDC: Found exact framebuffer match!")
                             bestMatch = service
                             foundExactMatch = true
                             break
-                        } else if !foundExactMatch {
+                        } else if !foundExactMatch && bestMatch == 0 {
                             // Partial match (vendor/product but different serial)
-                            if bestMatch != 0 {
-                                IOObjectRelease(bestMatch)
-                            }
+                            print("DDC: Found partial framebuffer match (vendor/product)")
                             bestMatch = service
                         }
                     }
+                }
 
-                    displayService = IOIteratorNext(displayIterator)
+                if foundExactMatch {
+                    break
                 }
             }
-
-            if foundExactMatch {
-                break
-            }
-
-            if bestMatch != service {
-                IOObjectRelease(service)
-            }
-            service = IOIteratorNext(iterator)
         }
 
-        // If no match found, try the first available framebuffer (for single external display setups)
-        if bestMatch == 0 {
-            print("DDC: No exact framebuffer match found, trying fallback...")
-            IOIteratorReset(iterator)
-            service = IOIteratorNext(iterator)
-            while service != 0 {
-                // Check if this framebuffer has I2C support (indicates external display)
-                var busCount: IOItemCount = 0
-                if IOFBGetI2CInterfaceCount(service, &busCount) == KERN_SUCCESS && busCount > 0 {
-                    print("DDC: Using fallback framebuffer with \(busCount) I2C bus(es)")
-                    return service
-                }
+        // If we found a match, retain it and release the others
+        if bestMatch != 0 {
+            for service in framebuffers where service != bestMatch {
                 IOObjectRelease(service)
-                service = IOIteratorNext(iterator)
             }
-            print("DDC: No framebuffer with I2C support found")
-        } else {
-            print("DDC: Found matching framebuffer service")
+            print("DDC: Using matched framebuffer service")
+            return bestMatch
         }
 
-        return bestMatch
+        // No match found - on Apple Silicon with single external display, use the first framebuffer
+        // This is a common fallback that works for most setups
+        if framebuffers.count > 0 {
+            print("DDC: No exact framebuffer match found, using first available framebuffer as fallback")
+            // Release all but the first
+            for i in 1..<framebuffers.count {
+                IOObjectRelease(framebuffers[i])
+            }
+            return framebuffers[0]
+        }
+
+        print("DDC: No framebuffer service found")
+        return nil
     }
 
     private func sendI2CRequest(
@@ -483,7 +512,8 @@ final class DDCService {
             i2cRequest.replyBytes = UInt32(replyLength + 3)  // Include header and checksum
 
             // DDC/CI requires a delay between write and read
-            i2cRequest.minReplyDelay = 50 * 1000 * 1000  // 50ms in nanoseconds
+            // Increased from 50ms to 100ms for slower monitors
+            i2cRequest.minReplyDelay = 100 * 1000 * 1000  // 100ms in nanoseconds
         } else {
             i2cRequest.replyTransactionType = kIOI2CNoTransactionType
             i2cRequest.replyBytes = 0
@@ -492,11 +522,13 @@ final class DDCService {
         // Send the I2C request
         let result = IOI2CSendRequest(connect, 0, &i2cRequest)
         guard result == KERN_SUCCESS else {
+            print("DDC: IOI2CSendRequest failed with result: \(result)")
             return false
         }
 
         // Check if transaction completed successfully
         guard i2cRequest.result == KERN_SUCCESS else {
+            print("DDC: I2C transaction result failed: \(i2cRequest.result)")
             return false
         }
 
@@ -507,14 +539,21 @@ final class DDCService {
 
             // Verify we got expected reply length
             guard i2cRequest.replyBytes >= 3 else {
+                print("DDC: Reply too short: \(i2cRequest.replyBytes) bytes")
                 return false
             }
+
+            print("DDC: Got reply with \(i2cRequest.replyBytes) bytes")
 
             // Extract reply data (skip the length byte at position 0)
             let dataStart = 1  // After length byte
             for i in 0..<min(replyLength, Int(i2cRequest.replyBytes) - 2) {
                 reply[i] = replyBuffer[dataStart + i]
             }
+
+            // Log first few bytes for debugging
+            let debugBytes = (0..<min(10, Int(i2cRequest.replyBytes))).map { String(format: "%02X", replyBuffer[$0]) }.joined(separator: " ")
+            print("DDC: Reply bytes: \(debugBytes)")
         }
 
         return true
