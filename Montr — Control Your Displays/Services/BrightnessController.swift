@@ -49,7 +49,7 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
 
         // Apply to hardware/software
         if display.isBuiltIn {
-            await setBuiltInBrightness(value: clampedValue)
+            await setBuiltInBrightness(value: clampedValue, displayId: display.id)
         } else if display.supportsDDC {
             await setDDCBrightness(displayId: display.id, value: clampedValue)
         } else {
@@ -351,9 +351,44 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
         }
     }
 
-    private func setBuiltInBrightness(value: Int) async {
+    private func setBuiltInBrightness(value: Int, displayId: CGDirectDisplayID) async {
         let normalizedValue = Float(value) / 100.0
         _ = ddcService.setBuiltInBrightness(normalizedValue)
+
+        // Force a display refresh by touching the gamma table
+        // This ensures the brightness change is immediately visible
+        // (CoreDisplay API sometimes doesn't trigger an immediate visual update)
+        triggerDisplayRefresh(displayId: displayId)
+    }
+
+    /// Trigger a display refresh by doing a no-op gamma table write
+    private func triggerDisplayRefresh(displayId: CGDirectDisplayID) {
+        // Read current gamma and immediately re-apply it
+        // This forces the display to refresh without changing anything
+        var redTable = [CGGammaValue](repeating: 0, count: 256)
+        var greenTable = [CGGammaValue](repeating: 0, count: 256)
+        var blueTable = [CGGammaValue](repeating: 0, count: 256)
+        var sampleCount: UInt32 = 0
+
+        let readResult = CGGetDisplayTransferByTable(
+            displayId,
+            256,
+            &redTable,
+            &greenTable,
+            &blueTable,
+            &sampleCount
+        )
+
+        guard readResult == .success, sampleCount > 0 else { return }
+
+        // Re-apply the same gamma table to force a refresh
+        CGSetDisplayTransferByTable(
+            displayId,
+            sampleCount,
+            redTable,
+            greenTable,
+            blueTable
+        )
     }
 
     private func setDDCBrightness(displayId: CGDirectDisplayID, value: Int) async {
