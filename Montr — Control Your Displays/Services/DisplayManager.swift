@@ -20,6 +20,7 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
 
     private var displayReconfigurationCallback: CGDisplayReconfigurationCallBack?
     private var cancellables = Set<AnyCancellable>()
+    private let ddcQueue = DispatchQueue(label: "com.montr.ddc-check", qos: .userInitiated)
 
     // MARK: - Singleton
 
@@ -60,7 +61,7 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
 
         for i in 0..<Int(displayCount) {
             let displayId = displayIds[i]
-            if let display = createDisplay(from: displayId) {
+            if let display = await createDisplay(from: displayId) {
                 newDisplays.append(display)
             }
         }
@@ -123,7 +124,7 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
             .store(in: &cancellables)
     }
 
-    private func createDisplay(from displayId: CGDirectDisplayID) -> Display? {
+    private func createDisplay(from displayId: CGDirectDisplayID) async -> Display? {
         let isBuiltIn = CGDisplayIsBuiltin(displayId) != 0
 
         // Get display info
@@ -152,6 +153,7 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
         let connectionType = determineConnectionType(for: displayId, isBuiltIn: isBuiltIn)
 
         // Check DDC support by actually testing it
+        // Run on background queue to avoid blocking main thread (DDC can take several seconds with retries)
         var supportsDDC = false
         if !isBuiltIn {
             // Sidecar displays (iPads) use Apple vendor ID but don't support DDC
@@ -159,8 +161,13 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
             let isSidecarOrVirtual = vendorNumber == 0x0610 && !isBuiltIn
 
             if !isSidecarOrVirtual {
-                // Actually test DDC by trying to read brightness
-                supportsDDC = DDCService.shared.supportsDDC(displayId: displayId)
+                // Run DDC check on background queue to avoid blocking UI
+                supportsDDC = await withCheckedContinuation { continuation in
+                    ddcQueue.async {
+                        let result = DDCService.shared.supportsDDC(displayId: displayId)
+                        continuation.resume(returning: result)
+                    }
+                }
             }
         }
 
