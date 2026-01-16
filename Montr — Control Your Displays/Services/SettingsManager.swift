@@ -11,6 +11,8 @@ final class SettingsManager {
         static let displayCustomNames = "displayCustomNames"
         static let perDisplayBrightness = "perDisplayBrightness"
         static let perDisplayContrast = "perDisplayContrast"
+        static let perDisplayVolume = "perDisplayVolume"
+        static let perDisplayMuted = "perDisplayMuted"
         static let nightShiftEnabled = "nightShiftEnabled"
         static let nightShiftTemperature = "nightShiftTemperature"
         static let perDisplayTemperature = "perDisplayTemperature"
@@ -140,6 +142,40 @@ final class SettingsManager {
         var saved = savedContrast
         saved[displayId] = contrast
         savedContrast = saved
+    }
+
+    // MARK: - Volume
+
+    var savedVolume: [String: Int] {
+        get {
+            defaults.dictionary(forKey: Keys.perDisplayVolume) as? [String: Int] ?? [:]
+        }
+        set {
+            defaults.set(newValue, forKey: Keys.perDisplayVolume)
+        }
+    }
+
+    func saveVolume(_ volume: Int, for displayId: String) {
+        var saved = savedVolume
+        saved[displayId] = volume
+        savedVolume = saved
+    }
+
+    // MARK: - Mute
+
+    var savedMuted: [String: Bool] {
+        get {
+            defaults.dictionary(forKey: Keys.perDisplayMuted) as? [String: Bool] ?? [:]
+        }
+        set {
+            defaults.set(newValue, forKey: Keys.perDisplayMuted)
+        }
+    }
+
+    func saveMuted(_ muted: Bool, for displayId: String) {
+        var saved = savedMuted
+        saved[displayId] = muted
+        savedMuted = saved
     }
 
     // MARK: - Night Shift

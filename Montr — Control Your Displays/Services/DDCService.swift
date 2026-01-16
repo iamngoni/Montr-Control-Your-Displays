@@ -34,6 +34,8 @@ final class DDCService {
         case redGain = 0x16
         case greenGain = 0x18
         case blueGain = 0x1A
+        case volume = 0x62
+        case mute = 0x8D
         case powerMode = 0xD6
     }
 
@@ -116,6 +118,42 @@ final class DDCService {
     func setContrast(displayId: CGDirectDisplayID, value: Int) throws {
         let clampedValue = UInt16(max(0, min(100, value)))
         try writeVCPValue(displayId: displayId, code: .contrast, value: clampedValue)
+    }
+
+    /// Read volume value (0-100)
+    func readVolume(displayId: CGDirectDisplayID) throws -> Int {
+        let value = try readVCPValue(displayId: displayId, code: .volume)
+        return Int(value.current)
+    }
+
+    /// Set volume value (0-100)
+    func setVolume(displayId: CGDirectDisplayID, value: Int) throws {
+        let clampedValue = UInt16(max(0, min(100, value)))
+        try writeVCPValue(displayId: displayId, code: .volume, value: clampedValue)
+    }
+
+    /// Read mute state (true = muted)
+    func readMute(displayId: CGDirectDisplayID) throws -> Bool {
+        let value = try readVCPValue(displayId: displayId, code: .mute)
+        // DDC mute: 1 = muted, 2 = unmuted
+        return value.current == 1
+    }
+
+    /// Set mute state
+    func setMute(displayId: CGDirectDisplayID, muted: Bool) throws {
+        // DDC mute values: 1 = muted, 2 = unmuted
+        let value: UInt16 = muted ? 1 : 2
+        try writeVCPValue(displayId: displayId, code: .mute, value: value)
+    }
+
+    /// Check if display supports volume control
+    func supportsVolume(displayId: CGDirectDisplayID) -> Bool {
+        do {
+            _ = try readVolume(displayId: displayId)
+            return true
+        } catch {
+            return false
+        }
     }
 
     // MARK: - Private Methods
