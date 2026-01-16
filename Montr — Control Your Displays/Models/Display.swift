@@ -163,4 +163,16 @@ extension Display {
         }
         return "\(vendorName)-\(modelName)-\(id)"
     }
+
+    /// Whether this is a Sidecar (iPad) display
+    /// Sidecar displays use Apple vendor name but are not built-in
+    var isSidecar: Bool {
+        vendorName == "Apple" && !isBuiltIn
+    }
+
+    /// Whether this display supports gamma/color temperature changes
+    /// Sidecar displays don't properly support per-display gamma manipulation
+    var supportsGamma: Bool {
+        !isSidecar
+    }
 }

@@ -282,8 +282,8 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
     }
 
     private func setupObservers() {
-        // Listen for display changes
-        NotificationCenter.default.publisher(for: .displaysDidChange)
+        // Listen for display refresh completion (not the raw display change trigger)
+        NotificationCenter.default.publisher(for: .displaysRefreshed)
             .sink { [weak self] _ in
                 Task { @MainActor in
                     await self?.onDisplaysChanged()
@@ -314,12 +314,16 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
         let displayId = display.id
         let identifier = display.stableIdentifier
 
+        print("BrightnessController: Checking volume support for \(display.displayName) (DDC: \(display.supportsDDC))")
+
         let supported = await withCheckedContinuation { continuation in
             ddcQueue.async {
                 let result = ddcService.supportsVolume(displayId: displayId)
                 continuation.resume(returning: result)
             }
         }
+
+        print("BrightnessController: Volume support for \(display.displayName): \(supported)")
 
         if supported {
             volumeSupportedDisplays.insert(identifier)

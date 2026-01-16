@@ -43,6 +43,9 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
         isLoading = true
         defer { isLoading = false }
 
+        // Clear DDC cache to re-detect DDC support on refresh
+        DDCService.shared.clearAllCache()
+
         var displayIds = [CGDirectDisplayID](repeating: 0, count: 16)
         var displayCount: UInt32 = 0
 
@@ -70,6 +73,10 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
         }
 
         displays = newDisplays
+
+        // Post a separate notification after displays are updated
+        // This is separate from .displaysDidChange which triggers the refresh
+        NotificationCenter.default.post(name: .displaysRefreshed, object: nil)
     }
 
     /// Get a display by ID
@@ -171,7 +178,7 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
     }
 
     private func vendorName(for vendorNumber: UInt32) -> String {
-        // Common vendor IDs
+        // Common vendor IDs (EDID manufacturer codes)
         switch vendorNumber {
         case 0x10AC: return "Dell"
         case 0x1E6D: return "LG"
@@ -186,6 +193,21 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
         case 0x4DD9: return "Lenovo"
         case 0x5262: return "Philips"
         case 0x3284: return "AOC"
+        case 0x0E6A: return "LG" // Alternative LG code
+        case 0x22F0: return "HP" // Alternative HP code
+        case 0x4D10: return "Sharp"
+        case 0x1AB3: return "Sony"
+        case 0x4C83: return "Panasonic"
+        case 0x5A63: return "Vizio"
+        case 0x4249: return "Bush"
+        case 0x472D: return "Gateway"
+        case 0x3023: return "Hanns-G"
+        case 0x2DB2: return "NEC"
+        case 0x0E11: return "Compaq"
+        case 0x4CA3: return "Gigabyte"
+        case 0x5089: return "Sceptre"
+        case 0x4C49: return "LI" // Some Chinese manufacturers
+        case 0x0000: return "Unknown" // Sometimes returns 0 for certain displays
         default: return "Display"
         }
     }
@@ -197,12 +219,19 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
 
         // Try to get the display name from IOKit
         if let name = getDisplayNameFromIOKit(displayId: displayId) {
+            print("DisplayManager: Got display name from IOKit: \(name)")
             return name
         }
 
-        // Fallback to vendor + model number
+        print("DisplayManager: IOKit name lookup failed for display \(displayId) (vendor: \(String(format: "0x%04X", vendorNumber)), model: \(modelNumber))")
+
+        // Fallback - use vendor name if known, otherwise use "External Monitor"
         let vendor = vendorName(for: vendorNumber)
-        return "\(vendor) Display \(modelNumber)"
+        if vendor != "Display" {
+            return "\(vendor) Monitor"
+        }
+        // Unknown vendor - use generic name with model number for identification
+        return "External Monitor \(modelNumber)"
     }
 
     private func getBuiltInDisplayName() -> String {
@@ -239,19 +268,25 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
     private func getDisplayNameViaServicePort(displayId: CGDirectDisplayID) -> String? {
         // Use the deprecated but reliable CGDisplayIOServicePort
         let service = CGDisplayIOServicePort(displayId)
-        guard service != 0 else { return nil }
+        guard service != 0 else {
+            print("DisplayManager: CGDisplayIOServicePort returned 0 for display \(displayId)")
+            return nil
+        }
 
         // Get the display info dictionary
         guard let infoDict = IODisplayCreateInfoDictionary(service, IOOptionBits(kIODisplayOnlyPreferredName))?.takeRetainedValue() as? [String: Any] else {
+            print("DisplayManager: Failed to get display info dictionary from service port")
             return nil
         }
 
         // Extract the localized product name
         if let names = infoDict[kDisplayProductName] as? [String: String],
            let name = names.values.first, !name.isEmpty {
+            print("DisplayManager: Got name via service port: \(name)")
             return name
         }
 
+        print("DisplayManager: No product name in display info dictionary")
         return nil
     }
 
@@ -450,5 +485,8 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
 // MARK: - Notification Names
 
 extension Notification.Name {
+    /// Posted when macOS reports a display configuration change (triggers refresh)
     static let displaysDidChange = Notification.Name("displaysDidChange")
+    /// Posted after displays have been refreshed (use this to react to display list updates)
+    static let displaysRefreshed = Notification.Name("displaysRefreshed")
 }

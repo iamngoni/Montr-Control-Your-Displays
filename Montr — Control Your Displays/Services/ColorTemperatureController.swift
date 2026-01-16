@@ -224,7 +224,7 @@ final class ColorTemperatureController: ObservableObject, @unchecked Sendable {
             let currentTemp = Int(Double(startTemp) + (Double(targetTemp - startTemp) * progress))
 
             let displays = DisplayManager.shared.displays
-            for display in displays {
+            for display in displays where display.supportsGamma {
                 await applyTemperature(to: display, kelvin: currentTemp)
             }
         }
@@ -249,6 +249,13 @@ final class ColorTemperatureController: ObservableObject, @unchecked Sendable {
     private func applyTemperature(to display: Display, kelvin: Int) async {
         guard isEnabled else { return }
 
+        // Skip Sidecar (iPad) displays - they don't support per-display gamma manipulation
+        // Gamma changes to Sidecar displays may incorrectly affect other displays
+        guard display.supportsGamma else {
+            print("Skipping gamma for Sidecar display: \(display.displayName)")
+            return
+        }
+
         let brightness = await BrightnessController.shared.getBrightness(for: display)
         gammaService.applyColorTemperature(
             displayId: display.id,
@@ -261,6 +268,9 @@ final class ColorTemperatureController: ObservableObject, @unchecked Sendable {
         let displays = DisplayManager.shared.displays
 
         for display in displays {
+            // Skip Sidecar displays
+            guard display.supportsGamma else { continue }
+
             // Reset to neutral temperature (6500K) while maintaining brightness
             let brightness = await BrightnessController.shared.getBrightness(for: display)
             gammaService.applyColorTemperature(
