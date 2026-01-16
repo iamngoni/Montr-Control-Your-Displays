@@ -65,9 +65,6 @@ struct PopoverContentView: View {
                         )
                     }
 
-                    // Night Shift
-                    NightShiftSection()
-
                     // Profiles
                     ProfilesSection()
                 }
@@ -291,9 +288,20 @@ private struct AllDisplaysContent: View {
     let displays: [Display]
 
     @StateObject private var brightnessController = BrightnessController.shared
+    @StateObject private var colorTempController = ColorTemperatureController.shared
     @State private var brightness: Double = 100
     @State private var volume: Double = 50
     @State private var isMuted: Bool = false
+    @State private var temperature: Double = 6500
+
+    // Temperature range: 2700K (warmest/candlelight) to 6500K (coolest/daylight)
+    private let minTemp: Double = 2700
+    private let maxTemp: Double = 6500
+
+    // Normalized value for temperature slider
+    private var normalizedTempValue: Double {
+        1.0 - (temperature - minTemp) / (maxTemp - minTemp)
+    }
 
     // Check if any display supports volume
     private var anySupportsVolume: Bool {
@@ -530,11 +538,120 @@ private struct AllDisplaysContent: View {
                     }
                 }
             }
+
+            // Night Shift control (global - applies to all displays)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    HStack(spacing: 6) {
+                        Image(systemName: "moon.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(MontrTheme.textSecondary)
+
+                        Text("NIGHT SHIFT")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(MontrTheme.textSecondary)
+                            .tracking(0.5)
+                    }
+
+                    Spacer()
+
+                    // Toggle
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { colorTempController.isEnabled },
+                            set: { newValue in
+                                Task {
+                                    if newValue {
+                                        await colorTempController.enable()
+                                    } else {
+                                        await colorTempController.disable()
+                                    }
+                                }
+                            }
+                        )
+                    )
+                    .toggleStyle(TealToggleStyle())
+                    .labelsHidden()
+                    .scaleEffect(0.8)
+                }
+
+                // Temperature slider
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        // Gradient track: teal-ish on left (less warm) to orange on right (warmest)
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [MontrTheme.teal, MontrTheme.warmOrange],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(height: 6)
+                            .opacity(colorTempController.isEnabled ? 1.0 : 0.4)
+
+                        // Thumb
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 14, height: 14)
+                            .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                            .offset(
+                                x: max(
+                                    0,
+                                    min(
+                                        geometry.size.width - 14,
+                                        (geometry.size.width - 14) * normalizedTempValue)))
+                    }
+                    .frame(height: 20)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { gesture in
+                                guard colorTempController.isEnabled else { return }
+                                let normalized = min(
+                                    max(0, gesture.location.x / geometry.size.width), 1)
+                                // Invert: right = warmer (lower K), left = cooler (higher K)
+                                temperature = maxTemp - normalized * (maxTemp - minTemp)
+                            }
+                            .onEnded { _ in
+                                Task {
+                                    await colorTempController.setGlobalTemperature(Int(temperature))
+                                }
+                            }
+                    )
+                }
+                .frame(height: 20)
+
+                // Temperature info
+                HStack {
+                    Text("Warm")
+                        .font(.system(size: 9))
+                        .foregroundColor(MontrTheme.textSecondary)
+
+                    Spacer()
+
+                    Text("\(Int(temperature))K")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(colorTempController.isEnabled ? MontrTheme.textPrimary : MontrTheme.textSecondary)
+                        .monospacedDigit()
+
+                    Spacer()
+
+                    Text("Candlelight")
+                        .font(.system(size: 9))
+                        .foregroundColor(MontrTheme.textSecondary)
+                }
+            }
         }
         .padding(16)
         .onAppear {
             brightness = averageBrightness
             volume = averageVolume
+            temperature = Double(colorTempController.globalTemperature)
+        }
+        .onChange(of: colorTempController.globalTemperature) { _, newValue in
+            temperature = Double(newValue)
         }
     }
 }
@@ -577,9 +694,21 @@ private struct DisplayTabContent: View {
     let display: Display
 
     @StateObject private var brightnessController = BrightnessController.shared
+    @StateObject private var colorTempController = ColorTemperatureController.shared
     @State private var brightness: Double = 100
     @State private var volume: Double = 50
     @State private var isMuted: Bool = false
+    @State private var temperature: Double = 6500
+
+    // Temperature range: 2700K (warmest/candlelight) to 6500K (coolest/daylight)
+    private let minTemp: Double = 2700
+    private let maxTemp: Double = 6500
+
+    // Normalized value: 0 = warm (left), 1 = cool (right)
+    // Left (0) = 6500K (less warm), Right (1) = 2700K (warmest/candlelight)
+    private var normalizedTempValue: Double {
+        1.0 - (temperature - minTemp) / (maxTemp - minTemp)
+    }
 
     private var supportsVolume: Bool {
         brightnessController.supportsVolume(for: display)
@@ -784,10 +913,116 @@ private struct DisplayTabContent: View {
                     }
                 }
             }
+
+            // Night Shift control (per-display)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    HStack(spacing: 6) {
+                        Image(systemName: "moon.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(MontrTheme.textSecondary)
+
+                        Text("NIGHT SHIFT")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(MontrTheme.textSecondary)
+                            .tracking(0.5)
+                    }
+
+                    Spacer()
+
+                    // Toggle
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { colorTempController.isEnabled },
+                            set: { newValue in
+                                Task {
+                                    if newValue {
+                                        await colorTempController.enable()
+                                    } else {
+                                        await colorTempController.disable()
+                                    }
+                                }
+                            }
+                        )
+                    )
+                    .toggleStyle(TealToggleStyle())
+                    .labelsHidden()
+                    .scaleEffect(0.8)
+                }
+
+                // Temperature slider
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        // Gradient track: teal-ish on left (less warm) to orange on right (warmest)
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [MontrTheme.teal, MontrTheme.warmOrange],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(height: 6)
+                            .opacity(colorTempController.isEnabled ? 1.0 : 0.4)
+
+                        // Thumb
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 14, height: 14)
+                            .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                            .offset(
+                                x: max(
+                                    0,
+                                    min(
+                                        geometry.size.width - 14,
+                                        (geometry.size.width - 14) * normalizedTempValue)))
+                    }
+                    .frame(height: 20)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { gesture in
+                                guard colorTempController.isEnabled else { return }
+                                let normalized = min(
+                                    max(0, gesture.location.x / geometry.size.width), 1)
+                                // Invert: right = warmer (lower K), left = cooler (higher K)
+                                temperature = maxTemp - normalized * (maxTemp - minTemp)
+                            }
+                            .onEnded { _ in
+                                Task {
+                                    await colorTempController.setTemperature(for: display, kelvin: Int(temperature))
+                                }
+                            }
+                    )
+                }
+                .frame(height: 20)
+
+                // Temperature info
+                HStack {
+                    Text("Warm")
+                        .font(.system(size: 9))
+                        .foregroundColor(MontrTheme.textSecondary)
+
+                    Spacer()
+
+                    Text("\(Int(temperature))K")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(colorTempController.isEnabled ? MontrTheme.textPrimary : MontrTheme.textSecondary)
+                        .monospacedDigit()
+
+                    Spacer()
+
+                    Text("Candlelight")
+                        .font(.system(size: 9))
+                        .foregroundColor(MontrTheme.textSecondary)
+                }
+            }
         }
         .padding(16)
         .onAppear {
             brightness = Double(brightnessController.getBrightness(for: display))
+            temperature = Double(colorTempController.getTemperature(for: display))
             if supportsVolume {
                 volume = Double(brightnessController.getVolume(for: display))
                 isMuted = brightnessController.isMuted(for: display)
@@ -811,160 +1046,17 @@ private struct DisplayTabContent: View {
                 isMuted = newValue
             }
         }
-    }
-}
-
-// MARK: - Night Shift Section
-
-private struct NightShiftSection: View {
-    @StateObject private var colorTempController = ColorTemperatureController.shared
-    @State private var temperature: Double = 5625
-
-    // Temperature range: 2700K (warmest/candlelight) to 6500K (coolest/daylight)
-    private let minTemp: Double = 2700
-    private let maxTemp: Double = 6500
-
-    // Normalized value: 0 = warm (left), 1 = cool (right)
-    // But we want warmer on left, candlelight on right, so we invert
-    // Left (0) = 6500K (less warm), Right (1) = 2700K (warmest/candlelight)
-    private var normalizedValue: Double {
-        1.0 - (temperature - minTemp) / (maxTemp - minTemp)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header row
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "moon.fill")
-                        .font(.system(size: 13))
-                        .foregroundColor(MontrTheme.textSecondary)
-
-                    Text("Night Shift")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(MontrTheme.textPrimary)
-                }
-
-                Spacer()
-
-                // Toggle
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { colorTempController.isEnabled },
-                        set: { newValue in
-                            Task {
-                                if newValue {
-                                    await colorTempController.enable()
-                                } else {
-                                    await colorTempController.disable()
-                                }
-                            }
-                        }
-                    )
-                )
-                .toggleStyle(TealToggleStyle())
-                .labelsHidden()
+        .onChange(of: colorTempController.perDisplayTemperature[display.stableIdentifier]) {
+            _, newValue in
+            if let newValue {
+                temperature = Double(newValue)
             }
-
-            // Temperature slider - gradient from warm teal to warm orange (candlelight)
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    // Gradient track: teal-ish on left (less warm) to orange on right (warmest)
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [MontrTheme.teal, MontrTheme.warmOrange],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(height: 8)
-                        .opacity(colorTempController.isEnabled ? 1.0 : 0.4)
-
-                    // Thumb
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 18, height: 18)
-                        .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.white, lineWidth: 2)
-                        )
-                        .offset(
-                            x: max(
-                                0,
-                                min(
-                                    geometry.size.width - 18,
-                                    (geometry.size.width - 18) * normalizedValue)))
-                }
-                .frame(height: 24)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { gesture in
-                            guard colorTempController.isEnabled else { return }
-                            let normalized = min(
-                                max(0, gesture.location.x / geometry.size.width), 1)
-                            // Invert: right = warmer (lower K), left = cooler (higher K)
-                            temperature = maxTemp - normalized * (maxTemp - minTemp)
-                        }
-                        .onEnded { _ in
-                            Task {
-                                await colorTempController.setGlobalTemperature(Int(temperature))
-                            }
-                        }
-                )
-            }
-            .frame(height: 24)
-
-            // Temperature labels (matching reference: Warm -> Warmer -> Candlelight)
-            HStack {
-                Text("Warm")
-                    .font(.system(size: 10))
-                    .foregroundColor(MontrTheme.textSecondary)
-
-                Spacer()
-
-                Text("Warmer")
-                    .font(.system(size: 10))
-                    .foregroundColor(MontrTheme.textSecondary)
-
-                Spacer()
-
-                Text("Candlelight")
-                    .font(.system(size: 10))
-                    .foregroundColor(MontrTheme.textSecondary)
-            }
-
-            // Mode and Kelvin
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 10))
-                    Text("Manual")
-                        .font(.system(size: 11))
-                }
-                .foregroundColor(MontrTheme.textSecondary)
-
-                Spacer()
-
-                Text("\(Int(temperature))K")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(MontrTheme.textPrimary)
-                    .monospacedDigit()
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(MontrTheme.cardBackground)
-        )
-        .onAppear {
-            temperature = Double(colorTempController.globalTemperature)
         }
         .onChange(of: colorTempController.globalTemperature) { _, newValue in
-            temperature = Double(newValue)
+            // Update if using global temperature
+            if colorTempController.schedule.applyToAllDisplays {
+                temperature = Double(newValue)
+            }
         }
     }
 }
