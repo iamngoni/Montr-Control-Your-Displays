@@ -3,6 +3,10 @@ import CoreGraphics
 import Combine
 import IOKit
 
+// Private API declaration for getting IOKit service port for a display
+@_silgen_name("CGDisplayIOServicePort")
+private func CGDisplayIOServicePort(_ display: CGDirectDisplayID) -> io_service_t
+
 /// Manages display detection and enumeration
 @MainActor
 final class DisplayManager: ObservableObject, @unchecked Sendable {
@@ -139,8 +143,18 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
         // Determine connection type
         let connectionType = determineConnectionType(for: displayId, isBuiltIn: isBuiltIn)
 
-        // Check DDC support (will be tested by DDCService later)
-        let supportsDDC = !isBuiltIn // Assume external displays might support DDC
+        // Check DDC support by actually testing it
+        var supportsDDC = false
+        if !isBuiltIn {
+            // Sidecar displays (iPads) use Apple vendor ID but don't support DDC
+            // Also check for virtual displays which won't support DDC
+            let isSidecarOrVirtual = vendorNumber == 0x0610 && !isBuiltIn
+
+            if !isSidecarOrVirtual {
+                // Actually test DDC by trying to read brightness
+                supportsDDC = DDCService.shared.supportsDDC(displayId: displayId)
+            }
+        }
 
         return Display(
             id: displayId,
@@ -213,9 +227,39 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
     }
 
     private func getDisplayNameFromIOKit(displayId: CGDirectDisplayID) -> String? {
+        // Method 1: Try using CGDisplayIOServicePort (deprecated but reliable)
+        if let name = getDisplayNameViaServicePort(displayId: displayId) {
+            return name
+        }
+
+        // Method 2: Fallback to iterating all displays and matching
+        return getDisplayNameViaIteration(displayId: displayId)
+    }
+
+    private func getDisplayNameViaServicePort(displayId: CGDirectDisplayID) -> String? {
+        // Use the deprecated but reliable CGDisplayIOServicePort
+        let service = CGDisplayIOServicePort(displayId)
+        guard service != 0 else { return nil }
+
+        // Get the display info dictionary
+        guard let infoDict = IODisplayCreateInfoDictionary(service, IOOptionBits(kIODisplayOnlyPreferredName))?.takeRetainedValue() as? [String: Any] else {
+            return nil
+        }
+
+        // Extract the localized product name
+        if let names = infoDict[kDisplayProductName] as? [String: String],
+           let name = names.values.first, !name.isEmpty {
+            return name
+        }
+
+        return nil
+    }
+
+    private func getDisplayNameViaIteration(displayId: CGDirectDisplayID) -> String? {
         // Get the target display's vendor and product IDs
         let targetVendor = CGDisplayVendorNumber(displayId)
         let targetModel = CGDisplayModelNumber(displayId)
+        let targetSerial = CGDisplaySerialNumber(displayId)
 
         var iterator: io_iterator_t = 0
         let matching = IOServiceMatching("IODisplayConnect")
@@ -225,6 +269,9 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
         }
 
         defer { IOObjectRelease(iterator) }
+
+        var bestMatch: String?
+        var exactMatchFound = false
 
         var service = IOIteratorNext(iterator)
         while service != 0 {
@@ -244,17 +291,29 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
                 continue
             }
 
+            // Get serial number if available
+            let serialNumber = infoDict[kDisplaySerialNumber] as? UInt32 ?? 0
+
             // Match by vendor and model
             if vendorId == targetVendor && productId == targetModel {
                 // Found matching display - get the localized name from EDID
                 if let names = infoDict[kDisplayProductName] as? [String: String],
                    let name = names.values.first, !name.isEmpty {
-                    return name
+
+                    // Prefer exact match including serial
+                    if serialNumber == targetSerial || targetSerial == 0 {
+                        return name  // Exact match
+                    }
+
+                    // Keep as candidate if not exact match
+                    if !exactMatchFound {
+                        bestMatch = name
+                    }
                 }
             }
         }
 
-        return nil
+        return bestMatch
     }
 
     private func determineConnectionType(for displayId: CGDirectDisplayID, isBuiltIn: Bool) -> Display.ConnectionType {
