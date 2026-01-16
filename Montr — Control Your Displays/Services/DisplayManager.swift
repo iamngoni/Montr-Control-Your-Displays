@@ -139,8 +139,18 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
         // Determine connection type
         let connectionType = determineConnectionType(for: displayId, isBuiltIn: isBuiltIn)
 
-        // Check DDC support (will be tested by DDCService later)
-        let supportsDDC = !isBuiltIn // Assume external displays might support DDC
+        // Check DDC support by actually testing it
+        var supportsDDC = false
+        if !isBuiltIn {
+            // Sidecar displays (iPads) use Apple vendor ID but don't support DDC
+            // Also check for virtual displays which won't support DDC
+            let isSidecarOrVirtual = vendorNumber == 0x0610 && !isBuiltIn
+
+            if !isSidecarOrVirtual {
+                // Actually test DDC by trying to read brightness
+                supportsDDC = DDCService.shared.supportsDDC(displayId: displayId)
+            }
+        }
 
         return Display(
             id: displayId,
