@@ -2,6 +2,7 @@ import Foundation
 import CoreGraphics
 import Combine
 import IOKit
+import AppKit
 
 // Private API declaration for getting IOKit service port for a display
 @_silgen_name("CGDisplayIOServicePort")
@@ -217,13 +218,19 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
             return getBuiltInDisplayName()
         }
 
-        // Try to get the display name from IOKit
+        // Method 1: Try NSScreen.localizedName (cleanest, public API, macOS 10.15+)
+        if let name = getDisplayNameFromNSScreen(displayId: displayId) {
+            print("DisplayManager: Got display name from NSScreen: \(name)")
+            return name
+        }
+
+        // Method 2: Fall back to IOKit (for edge cases)
         if let name = getDisplayNameFromIOKit(displayId: displayId) {
             print("DisplayManager: Got display name from IOKit: \(name)")
             return name
         }
 
-        print("DisplayManager: IOKit name lookup failed for display \(displayId) (vendor: \(String(format: "0x%04X", vendorNumber)), model: \(modelNumber))")
+        print("DisplayManager: All name lookup methods failed for display \(displayId) (vendor: \(String(format: "0x%04X", vendorNumber)), model: \(modelNumber))")
 
         // Fallback - use vendor name if known, otherwise use "External Monitor"
         let vendor = vendorName(for: vendorNumber)
@@ -232,6 +239,22 @@ final class DisplayManager: ObservableObject, @unchecked Sendable {
         }
         // Unknown vendor - use generic name with model number for identification
         return "External Monitor \(modelNumber)"
+    }
+
+    private func getDisplayNameFromNSScreen(displayId: CGDirectDisplayID) -> String? {
+        // NSScreen.localizedName returns the same name shown in System Settings
+        // Match NSScreen to CGDirectDisplayID via deviceDescription
+        for screen in NSScreen.screens {
+            if let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
+               screenNumber == displayId {
+                let name = screen.localizedName
+                // Avoid returning generic "Display" or empty strings
+                if !name.isEmpty && name != "Display" {
+                    return name
+                }
+            }
+        }
+        return nil
     }
 
     private func getBuiltInDisplayName() -> String {
