@@ -175,4 +175,24 @@ extension Display {
     var supportsGamma: Bool {
         !isSidecar
     }
+
+    /// Whether DDC may be limited due to Mac Mini HDMI port
+    /// Note: Mac Mini HDMI ports reportedly don't support DDC on Apple Silicon
+    /// See: https://alinpanaitiu.com/blog/journey-to-ddc-on-m1-macs/
+    var mayHaveHDMIDDCLimitation: Bool {
+        #if arch(arm64)
+            // On Apple Silicon Mac Mini, HDMI port doesn't support DDC
+            return connectionType == .hdmi && !isBuiltIn && !isSidecar
+        #else
+            return false
+        #endif
+    }
+
+    /// Whether DDC is expected to work reliably on this display
+    /// Takes into account known hardware limitations
+    var ddcExpectedReliable: Bool {
+        guard supportsDDC else { return false }
+        guard !mayHaveHDMIDDCLimitation else { return false }
+        return true
+    }
 }
