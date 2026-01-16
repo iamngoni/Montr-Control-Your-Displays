@@ -76,14 +76,18 @@ final class DDCService {
     func supportsDDC(displayId: CGDirectDisplayID) -> Bool {
         // Check cache first
         if let cached = ddcSupportCache[displayId] {
+            print("DDC: Using cached result for display \(displayId): \(cached)")
             return cached
         }
 
         // Try to read brightness to test DDC support
         let supported: Bool
-        if let _ = try? readBrightness(displayId: displayId) {
+        do {
+            let brightness = try readBrightness(displayId: displayId)
+            print("DDC: Successfully read brightness (\(brightness)) for display \(displayId)")
             supported = true
-        } else {
+        } catch {
+            print("DDC: Failed to read brightness for display \(displayId): \(error)")
             supported = false
         }
 
@@ -94,6 +98,11 @@ final class DDCService {
     /// Clear DDC support cache for a display
     func clearCache(for displayId: CGDirectDisplayID) {
         ddcSupportCache.removeValue(forKey: displayId)
+    }
+
+    /// Clear all DDC support cache
+    func clearAllCache() {
+        ddcSupportCache.removeAll()
     }
 
     /// Read brightness value (0-100)
@@ -240,6 +249,7 @@ final class DDCService {
 
         let matching = IOServiceMatching("IOFramebuffer")
         guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
+            print("DDC: Failed to get IOFramebuffer services")
             return nil
         }
         defer { IOObjectRelease(iterator) }
@@ -248,6 +258,8 @@ final class DDCService {
         let targetVendor = CGDisplayVendorNumber(displayId)
         let targetModel = CGDisplayModelNumber(displayId)
         let targetSerial = CGDisplaySerialNumber(displayId)
+
+        print("DDC: Looking for framebuffer for display \(displayId) (vendor: \(String(format: "0x%04X", targetVendor)), model: \(targetModel), serial: \(targetSerial))")
 
         var bestMatch: io_service_t = 0
         var foundExactMatch = false
@@ -321,17 +333,22 @@ final class DDCService {
 
         // If no match found, try the first available framebuffer (for single external display setups)
         if bestMatch == 0 {
+            print("DDC: No exact framebuffer match found, trying fallback...")
             IOIteratorReset(iterator)
             service = IOIteratorNext(iterator)
             while service != 0 {
                 // Check if this framebuffer has I2C support (indicates external display)
                 var busCount: IOItemCount = 0
                 if IOFBGetI2CInterfaceCount(service, &busCount) == KERN_SUCCESS && busCount > 0 {
+                    print("DDC: Using fallback framebuffer with \(busCount) I2C bus(es)")
                     return service
                 }
                 IOObjectRelease(service)
                 service = IOIteratorNext(iterator)
             }
+            print("DDC: No framebuffer with I2C support found")
+        } else {
+            print("DDC: Found matching framebuffer service")
         }
 
         return bestMatch
