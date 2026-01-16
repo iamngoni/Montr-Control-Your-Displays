@@ -302,8 +302,9 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
                 await setBrightness(for: display, value: savedBrightness)
             }
 
-            // Check volume support for DDC displays
-            if display.supportsDDC && !display.isBuiltIn {
+            // Check volume support for ALL external displays (not just DDC brightness-supported)
+            // Some monitors support volume DDC even if brightness DDC fails
+            if !display.isBuiltIn && !display.isSidecar {
                 await checkVolumeSupport(for: display)
             }
         }
