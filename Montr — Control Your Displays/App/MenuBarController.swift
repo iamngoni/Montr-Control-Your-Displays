@@ -242,15 +242,15 @@ final class MenuBarController: NSObject, ObservableObject {
     private func updateIcon() {
         guard let button = statusItem?.button else { return }
 
-        // Always use a white monitor icon
-        if let image = NSImage(systemSymbolName: "display", accessibilityDescription: "Montr") {
-            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-            if let configuredImage = image.withSymbolConfiguration(config) {
-                let finalImage = configuredImage.copy() as! NSImage
-                finalImage.isTemplate = true  // Template for proper menu bar appearance (white)
-                button.image = finalImage
-                button.contentTintColor = nil
-            }
+        // Create SF Symbol with proper configuration for menu bar
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+
+        if let image = NSImage(systemSymbolName: "display", accessibilityDescription: "Montr")?
+            .withSymbolConfiguration(config) {
+            // Set as template image for proper menu bar appearance
+            // This ensures the icon adapts to light/dark mode and avoids transparency issues
+            image.isTemplate = true
+            button.image = image
         }
     }
 }

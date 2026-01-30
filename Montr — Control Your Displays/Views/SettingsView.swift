@@ -1264,9 +1264,32 @@ private struct AddTriggerSheet: View {
 
 struct ShortcutsSettingsView: View {
     @StateObject private var hotkeyManager = HotkeyManager.shared
+    @StateObject private var mediaKeyManager = MediaKeyManager.shared
+    @State private var mediaKeysEnabled = SettingsManager.shared.mediaKeysEnabled
 
     var body: some View {
         VStack(spacing: 12) {
+            // Media Keys Card
+            SettingsRow(icon: "keyboard", iconColor: SettingsTheme.teal) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Use media keys for external displays")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(SettingsTheme.textPrimary)
+                        Text("Control brightness and volume with F-keys")
+                            .font(.system(size: 11))
+                            .foregroundColor(SettingsTheme.textSecondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $mediaKeysEnabled)
+                        .toggleStyle(TealToggleStyle())
+                        .labelsHidden()
+                        .onChange(of: mediaKeysEnabled) { _, newValue in
+                            mediaKeyManager.setEnabled(newValue)
+                        }
+                }
+            }
+
             SettingsCard(icon: "command", iconColor: SettingsTheme.teal, title: "Global Shortcuts")
             {
                 VStack(spacing: 8) {
