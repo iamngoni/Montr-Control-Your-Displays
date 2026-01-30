@@ -95,5 +95,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = ProfileManager.shared
         _ = HotkeyManager.shared
         _ = SunriseSunsetService.shared
+        _ = MediaKeyManager.shared
     }
 }

@@ -24,6 +24,7 @@ final class SettingsManager {
         static let originalDisplaySettings = "originalDisplaySettings"
         static let sentryEnabled = "sentryEnabled"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
+        static let mediaKeysEnabled = "mediaKeysEnabled"
     }
 
     // MARK: - Singleton
@@ -49,7 +50,8 @@ final class SettingsManager {
             Keys.nightShiftTemperature: 6500,
             Keys.contrastEnabled: false,
             Keys.sentryEnabled: true,
-            Keys.hasCompletedOnboarding: false
+            Keys.hasCompletedOnboarding: false,
+            Keys.mediaKeysEnabled: false
         ])
     }
 
@@ -83,6 +85,11 @@ final class SettingsManager {
     var hasCompletedOnboarding: Bool {
         get { defaults.bool(forKey: Keys.hasCompletedOnboarding) }
         set { defaults.set(newValue, forKey: Keys.hasCompletedOnboarding) }
+    }
+
+    var mediaKeysEnabled: Bool {
+        get { defaults.bool(forKey: Keys.mediaKeysEnabled) }
+        set { defaults.set(newValue, forKey: Keys.mediaKeysEnabled) }
     }
 
     // MARK: - Display Names
