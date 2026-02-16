@@ -49,11 +49,17 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
 
         // Apply to hardware/software
         if display.isBuiltIn {
-            await setBuiltInBrightness(value: clampedValue, displayId: display.id)
+            let success = await setBuiltInBrightness(value: clampedValue, displayId: display.id)
+            if !success {
+                await applyGammaBrightness(for: display, value: clampedValue)
+            }
         } else if display.supportsDDC {
-            await setDDCBrightness(displayId: display.id, value: clampedValue)
+            let success = await setDDCBrightness(displayId: display.id, value: clampedValue)
+            if !success {
+                await applyGammaBrightness(for: display, value: clampedValue)
+            }
         } else {
-            await setGammaBrightness(displayId: display.id, value: clampedValue)
+            await applyGammaBrightness(for: display, value: clampedValue)
         }
 
         // Save to settings
@@ -351,14 +357,16 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
         }
     }
 
-    private func setBuiltInBrightness(value: Int, displayId: CGDirectDisplayID) async {
+    private func setBuiltInBrightness(value: Int, displayId: CGDirectDisplayID) async -> Bool {
         let normalizedValue = Float(value) / 100.0
-        _ = ddcService.setBuiltInBrightness(normalizedValue)
+        let success = ddcService.setBuiltInBrightness(normalizedValue, displayId: displayId)
 
         // Force a display refresh by touching the gamma table
         // This ensures the brightness change is immediately visible
         // (CoreDisplay API sometimes doesn't trigger an immediate visual update)
         triggerDisplayRefresh(displayId: displayId)
+
+        return success
     }
 
     /// Trigger a display refresh by doing a no-op gamma table write
@@ -391,7 +399,7 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
         )
     }
 
-    private func setDDCBrightness(displayId: CGDirectDisplayID, value: Int) async {
+    private func setDDCBrightness(displayId: CGDirectDisplayID, value: Int) async -> Bool {
         // Run DDC command on background queue to prevent UI freezing
         let ddcService = self.ddcService
         let success = await withCheckedContinuation { continuation in
@@ -406,14 +414,20 @@ final class BrightnessController: ObservableObject, @unchecked Sendable {
             }
         }
 
-        // Fall back to gamma brightness if DDC failed
-        if !success {
-            await setGammaBrightness(displayId: displayId, value: value)
-        }
+        return success
     }
 
     private func setGammaBrightness(displayId: CGDirectDisplayID, value: Int) async {
         gammaService.setBrightness(displayId: displayId, brightness: value)
+    }
+
+    private func applyGammaBrightness(for display: Display, value: Int) async {
+        let colorTempController = ColorTemperatureController.shared
+        if colorTempController.isEnabled {
+            await colorTempController.refreshTemperature(for: display)
+        } else {
+            await setGammaBrightness(displayId: display.id, value: value)
+        }
     }
 }
 
