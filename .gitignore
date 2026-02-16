@@ -1,3 +1,6 @@
 .build/
 build/
 qdpw-jthi-luww-nclh
+**/xcuserdata/
+**/*.xcuserdatad/
+Montr — Control Your Displays/Resources/Secrets.plist

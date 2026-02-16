@@ -40,6 +40,12 @@ swift test
 
 - Product spec: `docs/SPEC.md`
 
+## Configuration
+
+To enable Sentry crash reporting, provide `SENTRY_DSN` using one of these options:
+1. Create `Montr — Control Your Displays/Resources/Secrets.plist` from `Montr — Control Your Displays/Resources/Secrets.example.plist`.
+2. Set the `SENTRY_DSN` environment variable when launching the app.
+
 ## Notes
 
 - External monitor brightness uses DDC/CI when supported.
@@ -49,3 +55,7 @@ swift test
 
 - Sparkle (auto-updates)
 - Sentry (crash reporting)
+
+## License
+
+MIT. See `LICENSE`.

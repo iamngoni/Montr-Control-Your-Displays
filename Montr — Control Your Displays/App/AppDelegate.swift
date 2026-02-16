@@ -61,9 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func initializeSentry() {
         // Only initialize Sentry if user has enabled crash reporting
         guard SettingsManager.shared.sentryEnabled else { return }
+        guard let dsn = sentryDSN() else { return }
 
         SentrySDK.start { options in
-            options.dsn = "https://4ad1279d5985f2378b2f4548aa7e4e35@o1107818.ingest.us.sentry.io/4510711782703104"
+            options.dsn = dsn
             options.debug = false
 
             // Set sample rate for performance monitoring
@@ -85,6 +86,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 options.releaseName = "montr@\(version)+\(build)"
             }
         }
+    }
+
+    private func sentryDSN() -> String? {
+        if let dsn = ProcessInfo.processInfo.environment["SENTRY_DSN"], !dsn.isEmpty {
+            return dsn
+        }
+
+        if let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
+           let data = try? Data(contentsOf: url),
+           let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+           let dsn = plist["SENTRY_DSN"] as? String,
+           !dsn.isEmpty {
+            return dsn
+        }
+
+        return nil
     }
 
     private func initializeServices() {
