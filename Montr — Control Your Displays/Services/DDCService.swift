@@ -1426,7 +1426,7 @@ final class DDCService {
 
 extension DDCService {
     /// Get brightness for built-in display using CoreDisplay private API
-    func getBuiltInBrightness() -> Float? {
+    func getBuiltInBrightness(displayId: CGDirectDisplayID) -> Float? {
         // Use CoreDisplay private API
         // This is undocumented but widely used
         typealias GetBrightnessFunc = @convention(c) (UInt32) -> Float
@@ -1445,17 +1445,27 @@ extension DDCService {
 
         let getBrightness = unsafeBitCast(symbol, to: GetBrightnessFunc.self)
 
-        // Get main display ID
-        let mainDisplay = CGMainDisplayID()
-        guard CGDisplayIsBuiltin(mainDisplay) != 0 else {
-            return nil
+        let targetDisplay: CGDirectDisplayID
+        if CGDisplayIsBuiltin(displayId) != 0 {
+            targetDisplay = displayId
+        } else {
+            let mainDisplay = CGMainDisplayID()
+            guard CGDisplayIsBuiltin(mainDisplay) != 0 else {
+                return nil
+            }
+            targetDisplay = mainDisplay
         }
 
-        return getBrightness(mainDisplay)
+        return getBrightness(targetDisplay)
+    }
+
+    /// Convenience getter that targets the main display (only works if it's built-in)
+    func getBuiltInBrightness() -> Float? {
+        getBuiltInBrightness(displayId: CGMainDisplayID())
     }
 
     /// Set brightness for built-in display using CoreDisplay private API
-    func setBuiltInBrightness(_ brightness: Float) -> Bool {
+    func setBuiltInBrightness(_ brightness: Float, displayId: CGDirectDisplayID) -> Bool {
         typealias SetBrightnessFunc = @convention(c) (UInt32, Double) -> Void
 
         guard
@@ -1472,14 +1482,25 @@ extension DDCService {
 
         let setBrightness = unsafeBitCast(symbol, to: SetBrightnessFunc.self)
 
-        let mainDisplay = CGMainDisplayID()
-        guard CGDisplayIsBuiltin(mainDisplay) != 0 else {
-            return false
+        let targetDisplay: CGDirectDisplayID
+        if CGDisplayIsBuiltin(displayId) != 0 {
+            targetDisplay = displayId
+        } else {
+            let mainDisplay = CGMainDisplayID()
+            guard CGDisplayIsBuiltin(mainDisplay) != 0 else {
+                return false
+            }
+            targetDisplay = mainDisplay
         }
 
         let clampedBrightness = max(0.0, min(1.0, Double(brightness)))
-        setBrightness(mainDisplay, clampedBrightness)
+        setBrightness(targetDisplay, clampedBrightness)
 
         return true
+    }
+
+    /// Convenience setter that targets the main display (only works if it's built-in)
+    func setBuiltInBrightness(_ brightness: Float) -> Bool {
+        setBuiltInBrightness(brightness, displayId: CGMainDisplayID())
     }
 }

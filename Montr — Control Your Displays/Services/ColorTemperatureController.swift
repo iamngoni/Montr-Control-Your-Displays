@@ -69,10 +69,21 @@ final class ColorTemperatureController: ObservableObject, @unchecked Sendable {
         let clampedKelvin = max(2700, min(6500, kelvin))
         let identifier = display.stableIdentifier
 
+        if schedule.applyToAllDisplays {
+            schedule.applyToAllDisplays = false
+        }
+
         perDisplayTemperature[identifier] = clampedKelvin
         await applyTemperature(to: display, kelvin: clampedKelvin)
 
         saveSettings()
+    }
+
+    /// Re-apply current temperature for a display (used after brightness changes)
+    func refreshTemperature(for display: Display) async {
+        guard isEnabled else { return }
+        let temp = getTemperature(for: display)
+        await applyTemperature(to: display, kelvin: temp)
     }
 
     /// Set global color temperature for all displays
